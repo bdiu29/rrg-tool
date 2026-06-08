@@ -3,6 +3,10 @@
 An interactive Relative Rotation Graph (RRG) that runs entirely on your Mac.
 A tiny Python server fetches price data and serves the chart at `localhost`.
 
+<p align="center">
+  <img src="assets/chart.png" alt="RRG sector rotation chart" width="800"/>
+</p>
+
 ## What it shows
 
 Each sector ETF is plotted by:
@@ -72,6 +76,8 @@ Press `Ctrl+C` in the terminal to stop.
   direction, and score.
 - **vs SPY bar chart** (bottom): each sector's latest return relative to SPY,
   sorted best to worst.
+
+  ![vs SPY bar chart](assets/barchart.png)
 - **Quadrant guide** (right panel): plain-English meaning of each quadrant.
 - **Click a sector** in the list to hide/show it; the chart reframes to fit
   whatever's visible. **Hover a dot** for exact values.
