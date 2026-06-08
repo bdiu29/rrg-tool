@@ -76,11 +76,11 @@ Press `Ctrl+C` in the terminal to stop.
   direction, and score.
 - **vs SPY bar chart** (bottom): each sector's latest return relative to SPY,
   sorted best to worst.
-
-  ![vs SPY bar chart](assets/barchart.png)
 - **Quadrant guide** (right panel): plain-English meaning of each quadrant.
 - **Click a sector** in the list to hide/show it; the chart reframes to fit
   whatever's visible. **Hover a dot** for exact values.
+
+![vs SPY bar chart](assets/barchart.png)
 
 ## Reading the chart
 
