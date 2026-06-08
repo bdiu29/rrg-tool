@@ -53,6 +53,23 @@ Press `Ctrl+C` in the terminal to stop.
   for rotating into Improving/Leading, red ↘ for rotating into
   Weakening/Lagging). When nothing crossed, it lists the strongest accumulation
   setups to watch instead.
+<<<<<<< HEAD
+=======
+- **Rotation Calls** (per-sector action): each sector gets an explicit call —
+  **ROTATE IN / ROTATE OUT / HOLD / AVOID / WATCH** — derived from its *direction
+  of travel* and momentum, not just which quadrant it sits in. The call shows
+  two places: a small badge on each Sectors legend row, and a dedicated
+  **Rotation Calls panel** (bottom) that splits candidates into a "Rotate In"
+  column (ranked by accumulation/early-upside score) and a "Rotate Out" column
+  (ranked by distribution/rolling-over score). The logic follows the standard
+  sector-rotation playbook:
+  - *Improving + heading NE* → ROTATE IN (momentum has turned, RS catching up)
+  - *Lagging but turning up* → ROTATE IN (earliest signal; momentum leads RS)
+  - *Leading and still rising* → HOLD
+  - *Leading rolling over / entering Weakening* → ROTATE OUT (trim into strength)
+  - *Lagging and still falling* → AVOID
+  - *Stubby tail (little relative movement)* → WATCH, regardless of quadrant
+>>>>>>> d353f6a (added rotation calls)
 - **Best Setup banner** (top): the single highest accumulation score — a sector
   turning up early (rising momentum, room below SPY), with quadrant, recent
   direction, and score.
@@ -97,4 +114,18 @@ XLRE, XLC), benchmarked against SPY. To change them, edit `DEFAULT_TICKERS` and
 - The **accumulation score** is a simple, transparent heuristic
   (`50 + 6·momentum-slope + 3·recent-kick + 2·room-below-SPY`, clamped 0–100).
   It's tunable in `_accum()` in `server.py` — it won't match any particular
+<<<<<<< HEAD
   commercial tool's number, but the selection logic favors early rotation.
+=======
+  commercial tool's number, but the selection logic favors early rotation. Its
+  mirror image, the **distribution score** (`_distrib()`), uses the symmetric
+  form (`50 + 6·momentum-decline + 3·down-kick + 2·extension-above-SPY`) to flag
+  leadership that's rolling over — the exit side of the rotation.
+- **Tail direction and length** drive the rotation calls. `_tail_heading()`
+  measures the net direction of travel across the *whole* tail (snapped to an
+  8-point compass: NE = strongest, SW = weakest) rather than a single noisy bar,
+  and `_tail_strength()` measures how far the sector has travelled (a longer tail
+  = a more committed move). A move with too short a tail is treated as
+  low-conviction (WATCH) no matter where it sits — momentum turns first, RS
+  turns second, so direction over several periods matters more than location.
+>>>>>>> d353f6a (added rotation calls)
