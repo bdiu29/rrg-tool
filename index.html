@@ -188,8 +188,6 @@
   .legend-item .nm { color: var(--dim); font-size: 10px; margin-left: auto; }
   .aside-h2-spaced { margin-top: 20px; }
 
-<<<<<<< HEAD
-=======
   /* Per-sector action call badge on legend rows */
   .legend-item .call-badge {
     margin-left: 8px;
@@ -248,7 +246,6 @@
   .calls-empty { font-size:11px; color:#5a6472; line-height:1.45; padding:6px 2px; }
   .calls-foot { font-size:10px; color:#5a6472; margin-top:12px; line-height:1.45; border-top:1px solid var(--grid); padding-top:11px; }
 
->>>>>>> d353f6a (added rotation calls)
   /* Rotation signals */
   #signals { display: flex; flex-direction: column; gap: 8px; }
   .sig-row { display: flex; align-items: baseline; gap: 8px; font-size: 11.5px; }
@@ -408,8 +405,6 @@
     <div id="bars"></div>
   </div>
 
-<<<<<<< HEAD
-=======
   <div class="calls-panel">
     <div class="calls-head">
       <h2>Rotation Calls</h2>
@@ -428,7 +423,6 @@
     <div class="calls-foot">ACCUM = early-upside score · DIST = rolling-over score. Educational only — confirm with price trend, not RRG alone.</div>
   </div>
 
->>>>>>> d353f6a (added rotation calls)
   <div id="tooltip"></div>
 
 <script>
@@ -457,8 +451,6 @@ const quadOf = (r, m) => r >= 100 ? (m >= 100 ? 'Leading' : 'Weakening')
                                   : (m >= 100 ? 'Improving' : 'Lagging');
 const QUAD_COLOR = { Leading: '#2ecc71', Improving: '#4f9be8', Weakening: '#d9943a', Lagging: '#e05563' };
 
-<<<<<<< HEAD
-=======
 // Action calls → CSS class + display label. Keys match server's `call` field.
 const CALL_STYLE = {
   'ROTATE IN':  { cls: 'call-in',    short: 'IN'    },
@@ -468,7 +460,6 @@ const CALL_STYLE = {
   'WATCH':      { cls: 'call-watch', short: 'WATCH' },
 };
 
->>>>>>> d353f6a (added rotation calls)
 const $ = (id) => document.getElementById(id);
 const el = (tag, attrs = {}) => {
   const e = document.createElementNS(NS, tag);
@@ -629,15 +620,10 @@ function render(data) {
     const color = colorFor(k);
     const item = document.createElement('div');
     item.className = 'legend-item' + (muted.has(k) ? ' muted' : '');
-<<<<<<< HEAD
-    item.innerHTML = `<span class="swatch" style="background:${color}"></span>
-                      <span class="tk">${k}</span><span class="nm">${s.name}</span>`;
-=======
     const cs = CALL_STYLE[s.call] || CALL_STYLE['WATCH'];
     item.innerHTML = `<span class="swatch" style="background:${color}"></span>
                       <span class="tk">${k}</span><span class="nm has-call">${s.name}</span>
                       <span class="call-badge ${cs.cls}" title="${s.call_why || ''}">${cs.short}</span>`;
->>>>>>> d353f6a (added rotation calls)
     item.addEventListener('click', () => {
       muted.has(k) ? muted.delete(k) : muted.add(k);
       render(lastData);
@@ -649,10 +635,7 @@ function render(data) {
   if (data.best) buildBanner(data.best);
   buildBars(data);
   buildSignals(data);
-<<<<<<< HEAD
-=======
   buildCalls(data);
->>>>>>> d353f6a (added rotation calls)
 
   $('state').style.display = 'none';
   svg.style.display = 'block';
@@ -790,8 +773,6 @@ function buildSignals(data) {
     });
 }
 
-<<<<<<< HEAD
-=======
 function buildCalls(data) {
   const s = data.sectors;
   const keys = Object.keys(s);
@@ -843,7 +824,6 @@ function renderCallColumn(wrap, rows, kind, scoreLabel, emptyMsg) {
   });
 }
 
->>>>>>> d353f6a (added rotation calls)
 function wireToggle(id, onPick) {
   $(id).addEventListener('click', (e) => {
     if (e.target.tagName !== 'BUTTON') return;

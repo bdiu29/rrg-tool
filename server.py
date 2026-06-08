@@ -98,13 +98,6 @@ def _direction(ratios, moments):
     return h + v
 
 
-<<<<<<< HEAD
-def _accum(ratios, moments):
-    """
-    Accumulation score (0-100). Favors sectors turning UP early in the cycle:
-    rising momentum, a fresh upward kick, and room below the benchmark (RS<100)
-    so we catch rotation before it's already extended into Leading.
-=======
 # Compass step (Δratio, Δmomentum) → 8-point arrow. RS on x, momentum on y.
 _COMPASS = [
     (1, 0, "→"), (1, 1, "↗"), (0, 1, "↑"), (-1, 1, "↖"),
@@ -168,20 +161,12 @@ def _accum(ratios, moments):
     the cycle: rising momentum, a fresh upward kick, and room below the
     benchmark (RS<100) so we catch rotation before it's already extended into
     Leading. Embodies the notes' "momentum turns first, RS turns second".
->>>>>>> d353f6a (added rotation calls)
     """
     if len(ratios) < 2:
         return 0
     mom_slope = moments[-1] - moments[0]            # momentum trend over the tail
     kick = max(0.0, moments[-1] - moments[-2])      # most recent upward push
     room = min(max(0.0, 100 - ratios[-1]), 12.0)    # upside room below SPY
-<<<<<<< HEAD
-    # Coefficients tuned for the scaled value spread (~±10 ratio, ±5 momentum).
-    raw = 50 + 3 * mom_slope + 1.5 * kick + 2 * room
-    return int(max(0, min(100, round(raw))))
-
-
-=======
     # Coefficients match the README formula (50 + 6·slope + 3·kick + 2·room),
     # tuned for the scaled value spread (~±10 ratio, ±5 momentum).
     raw = 50 + 6 * mom_slope + 3 * kick + 2 * room
@@ -260,7 +245,6 @@ def _rotation_call(ratios, moments, quadrant, accum, distrib, strength, heading_
     return "AVOID", "Lagging and not turning — weak with no upturn, stand aside"
 
 
->>>>>>> d353f6a (added rotation calls)
 def compute_rrg(tickers, benchmark, interval, tail=6, rs_window=14, mom_window=14, smooth=5):
     """
     Returns a dict of {ticker: {name, ratio:[...], momentum:[...], dates:[...]}}
@@ -332,8 +316,6 @@ def compute_rrg(tickers, benchmark, interval, tail=6, rs_window=14, mom_window=1
             if bench_ret is not None:
                 rel_pct = round(change_pct - bench_ret, 2)
 
-<<<<<<< HEAD
-=======
         quadrant = _quadrant(ratios[-1], moments[-1])
         accum = _accum(ratios, moments)
         distrib = _distrib(ratios, moments)
@@ -343,7 +325,6 @@ def compute_rrg(tickers, benchmark, interval, tail=6, rs_window=14, mom_window=1
             ratios, moments, quadrant, accum, distrib, strength, heading
         )
 
->>>>>>> d353f6a (added rotation calls)
         results[t] = {
             "name": SECTOR_NAMES.get(t, t),
             "ratio": ratios,
@@ -351,11 +332,6 @@ def compute_rrg(tickers, benchmark, interval, tail=6, rs_window=14, mom_window=1
             "dates": [d.strftime("%Y-%m-%d") for d in df.index],
             "change_pct": change_pct,
             "rel_pct": rel_pct,
-<<<<<<< HEAD
-            "quadrant": _quadrant(ratios[-1], moments[-1]),
-            "dir": _direction(ratios, moments),
-            "accum": _accum(ratios, moments),
-=======
             "quadrant": quadrant,
             "dir": _direction(ratios, moments),
             "accum": accum,
@@ -366,7 +342,6 @@ def compute_rrg(tickers, benchmark, interval, tail=6, rs_window=14, mom_window=1
             "heading_angle": angle,
             "call": call,                   # ROTATE IN / OUT / HOLD / AVOID / WATCH
             "call_why": rationale,
->>>>>>> d353f6a (added rotation calls)
         }
 
     # "Best setup" = highest accumulation score: a sector rotating UP early,

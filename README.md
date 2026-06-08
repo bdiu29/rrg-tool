@@ -53,8 +53,6 @@ Press `Ctrl+C` in the terminal to stop.
   for rotating into Improving/Leading, red ↘ for rotating into
   Weakening/Lagging). When nothing crossed, it lists the strongest accumulation
   setups to watch instead.
-<<<<<<< HEAD
-=======
 - **Rotation Calls** (per-sector action): each sector gets an explicit call —
   **ROTATE IN / ROTATE OUT / HOLD / AVOID / WATCH** — derived from its *direction
   of travel* and momentum, not just which quadrant it sits in. The call shows
@@ -69,7 +67,6 @@ Press `Ctrl+C` in the terminal to stop.
   - *Leading rolling over / entering Weakening* → ROTATE OUT (trim into strength)
   - *Lagging and still falling* → AVOID
   - *Stubby tail (little relative movement)* → WATCH, regardless of quadrant
->>>>>>> d353f6a (added rotation calls)
 - **Best Setup banner** (top): the single highest accumulation score — a sector
   turning up early (rising momentum, room below SPY), with quadrant, recent
   direction, and score.
@@ -114,9 +111,6 @@ XLRE, XLC), benchmarked against SPY. To change them, edit `DEFAULT_TICKERS` and
 - The **accumulation score** is a simple, transparent heuristic
   (`50 + 6·momentum-slope + 3·recent-kick + 2·room-below-SPY`, clamped 0–100).
   It's tunable in `_accum()` in `server.py` — it won't match any particular
-<<<<<<< HEAD
-  commercial tool's number, but the selection logic favors early rotation.
-=======
   commercial tool's number, but the selection logic favors early rotation. Its
   mirror image, the **distribution score** (`_distrib()`), uses the symmetric
   form (`50 + 6·momentum-decline + 3·down-kick + 2·extension-above-SPY`) to flag
@@ -128,4 +122,3 @@ XLRE, XLC), benchmarked against SPY. To change them, edit `DEFAULT_TICKERS` and
   = a more committed move). A move with too short a tail is treated as
   low-conviction (WATCH) no matter where it sits — momentum turns first, RS
   turns second, so direction over several periods matters more than location.
->>>>>>> d353f6a (added rotation calls)
