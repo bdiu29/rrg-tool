@@ -37,6 +37,18 @@
     background-image: radial-gradient(circle at 20% 0%, rgba(255,176,0,0.04), transparent 40%);
   }
 
+  .nav-link {
+    font-size: 10px;
+    color: var(--dim);
+    text-decoration: none;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: color 0.15s;
+    display: inline-block;
+    margin-bottom: 7px;
+  }
+  .nav-link:hover { color: var(--accent); }
+
   header {
     display: flex;
     justify-content: space-between;
@@ -351,7 +363,10 @@
 </head>
 <body>
   <header>
-    <h1>Relative Rotation Graph<span class="sub">Sector rotation vs <span id="bench">SPY</span></span></h1>
+    <div>
+      <a href="/schwab.html" class="nav-link">Schwab Account →</a>
+      <h1>Relative Rotation Graph<span class="sub">Sector rotation vs <span id="bench">SPY</span></span></h1>
+    </div>
     <div class="controls">
       <div class="ctl">
         <span class="ctl-label">Timeframe</span>
@@ -408,6 +423,7 @@
   <div class="calls-panel">
     <div class="calls-head">
       <h2>Rotation Calls</h2>
+      <button class="copy-btn" id="copy-calls">Copy</button>
     </div>
     <div class="calls-sub">Direction of travel + momentum, not just where each sector sits. Ranked by conviction.</div>
     <div class="calls-cols">
@@ -969,8 +985,43 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+function copyCallsText(btn) {
+  if (!lastData) return;
+  const s  = lastData.sectors;
+  const tf = lastData.timeframe === 'weekly' ? 'Weekly' : 'Daily';
+
+  const buckets = { 'ROTATE IN': [], 'ROTATE OUT': [], 'HOLD': [], 'WATCH': [], 'AVOID': [] };
+  Object.entries(s).forEach(([k, d]) => {
+    const score = (d.call === 'ROTATE IN' || d.call === 'HOLD') ? d.accum : d.distrib;
+    const label = (d.call === 'ROTATE IN' || d.call === 'HOLD') ? 'Accum' : 'Dist ';
+    buckets[d.call]?.push({ k, score, line: `  ${k.padEnd(5)} ${d.name.padEnd(22)} ${(d.heading_arrow||'·').padEnd(2)} ${(d.heading||'flat').padEnd(4)} ${label} ${String(score).padStart(3)}  ${d.call_why}` });
+  });
+
+  let text = `RRG Rotation Calls — ${tf} · ${lastData.date || ''}\n\n`;
+  const section = (arrow, call) => {
+    const rows = buckets[call];
+    if (!rows.length) return;
+    text += `${arrow} ${call}\n`;
+    rows.sort((a, b) => b.score - a.score).forEach(r => text += r.line + '\n');
+    text += '\n';
+  };
+  section('↗', 'ROTATE IN');
+  section('↘', 'ROTATE OUT');
+  ['HOLD', 'WATCH', 'AVOID'].forEach(call => {
+    buckets[call].sort((a, b) => b.score - a.score).forEach(r =>
+      text += `[${call.padEnd(10)}]${r.line.trimStart()}\n`
+    );
+  });
+
+  navigator.clipboard.writeText(text.trim()).then(
+    ()  => flashBtn(btn, 'Copied ✓'),
+    ()  => flashBtn(btn, 'Failed'),
+  );
+}
+
 $('copy-chart').addEventListener('click', (e) => copyChartImage(e.currentTarget));
-$('copy-bars').addEventListener('click', (e) => copyBarsImage(e.currentTarget));
+$('copy-bars').addEventListener('click',  (e) => copyBarsImage(e.currentTarget));
+$('copy-calls').addEventListener('click', (e) => copyCallsText(e.currentTarget));
 
 load();
 </script>

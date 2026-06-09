@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schwab — Account Positions</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg:     #0a0e14;
+    --panel:  #111722;
+    --grid:   #1c2533;
+    --ink:    #e6edf3;
+    --dim:    #8b94a3;
+    --accent: #ffb000;
+    --c-buy:   #2ecc71;
+    --c-hold:  #4f9be8;
+    --c-sell:  #e05563;
+    --c-watch: #d9943a;
+    --c-avoid: #8b94a3;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Spline Sans Mono', monospace;
+    min-height: 100vh;
+    padding: 28px;
+    max-width: 1320px;
+    margin: 0 auto;
+    background-image: radial-gradient(circle at 20% 0%, rgba(255,176,0,0.04), transparent 40%);
+  }
+
+  .nav-back {
+    font-size: 10px;
+    color: var(--dim);
+    text-decoration: none;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: color 0.15s;
+    display: inline-block;
+    margin-bottom: 7px;
+  }
+  .nav-back:hover { color: var(--accent); }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 26px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  h1 {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 800;
+    font-size: 30px;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  h1 .sub {
+    display: block;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--dim);
+    letter-spacing: 0.08em;
+    margin-top: 6px;
+    text-transform: uppercase;
+  }
+
+  .meta { font-size: 11px; color: var(--dim); text-align: right; line-height: 1.7; }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  /* Summary cards */
+  .summary-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 640px) { .summary-row { grid-template-columns: 1fr; } }
+
+  .summary-card {
+    background: var(--panel);
+    border: 1px solid var(--grid);
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .card-label {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    margin-bottom: 9px;
+  }
+  .card-value {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  .card-sub { font-size: 11px; color: var(--dim); margin-top: 5px; }
+  .pos { color: var(--c-buy); }
+  .neg { color: var(--c-sell); }
+
+  /* Buttons */
+  .btn {
+    font-family: 'Spline Sans Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 8px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--grid);
+    background: var(--panel);
+    color: var(--dim);
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.03em;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--ink); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn.primary {
+    background: var(--accent);
+    color: #0a0e14;
+    border-color: var(--accent);
+    font-weight: 700;
+  }
+  .btn.primary:hover { opacity: 0.85; }
+  .btn.primary:disabled { opacity: 0.5; }
+
+  .action-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .action-bar span { font-size: 11px; color: var(--dim); }
+
+  /* Positions table */
+  .table-wrap {
+    background: var(--panel);
+    border: 1px solid var(--grid);
+    border-radius: 14px;
+    overflow-x: auto;
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+
+  th {
+    text-align: left;
+    padding: 11px 14px;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--dim);
+    border-bottom: 1px solid var(--grid);
+    white-space: nowrap;
+    font-weight: 600;
+  }
+  th.r { text-align: right; }
+  th.c { text-align: center; }
+
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(28,37,51,0.6);
+    vertical-align: middle;
+    white-space: nowrap;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,176,0,0.025); }
+
+  .sym  { font-weight: 700; font-size: 13px; letter-spacing: -0.01em; }
+  .desc { color: var(--dim); font-size: 10.5px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+  td.r  { text-align: right; font-variant-numeric: tabular-nums; }
+  td.c  { text-align: center; }
+
+  .action-badge {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 5px;
+    border: 1px solid currentColor;
+    line-height: 1.4;
+    white-space: nowrap;
+  }
+  .ab-buy   { color: var(--c-buy); }
+  .ab-hold  { color: var(--c-hold); }
+  .ab-sell  { color: var(--c-sell); }
+  .ab-watch { color: var(--c-watch); }
+  .ab-avoid { color: var(--c-avoid); }
+  .ab-none  { color: #4a5568; border-color: #4a5568; }
+
+  .signal-cell { display: flex; align-items: center; gap: 5px; }
+  .sig-arrow   { font-size: 14px; }
+  .sig-quad    { font-size: 9.5px; color: var(--dim); }
+
+  /* Tooltip for RRG rationale */
+  td[title] { cursor: help; }
+
+  /* Auth panel */
+  .auth-panel {
+    max-width: 540px;
+    margin: 56px auto;
+    background: var(--panel);
+    border: 1px solid var(--grid);
+    border-radius: 16px;
+    padding: 38px 42px;
+  }
+  .auth-title {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-size: 22px;
+    font-weight: 800;
+    margin-bottom: 10px;
+  }
+  .auth-desc {
+    font-size: 12px;
+    color: var(--dim);
+    line-height: 1.65;
+    margin-bottom: 26px;
+  }
+  .auth-step {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    margin-bottom: 9px;
+    margin-top: 22px;
+  }
+  .paste-hint {
+    font-size: 11px;
+    color: var(--dim);
+    line-height: 1.55;
+    margin-bottom: 10px;
+  }
+  .paste-hint b { color: var(--ink); }
+  .paste-input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--grid);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: var(--ink);
+    font-family: 'Spline Sans Mono', monospace;
+    font-size: 11px;
+    outline: none;
+    transition: border-color 0.15s;
+    margin-bottom: 12px;
+  }
+  .paste-input:focus { border-color: var(--accent); }
+  .paste-input::placeholder { color: #4a5568; }
+  .auth-note {
+    font-size: 10.5px;
+    color: #5a6472;
+    line-height: 1.55;
+    margin-top: 18px;
+    border-top: 1px solid var(--grid);
+    padding-top: 15px;
+  }
+  .auth-note code {
+    font-family: 'Spline Sans Mono', monospace;
+    background: rgba(255,255,255,0.05);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+  }
+
+  /* No-creds banner */
+  .no-creds-banner {
+    background: rgba(217,148,58,0.10);
+    border: 1px solid rgba(217,148,58,0.30);
+    border-radius: 10px;
+    padding: 18px 22px;
+    font-size: 12px;
+    color: var(--accent);
+    max-width: 540px;
+    margin: 56px auto;
+    line-height: 1.65;
+  }
+  .no-creds-banner code {
+    font-family: 'Spline Sans Mono', monospace;
+    background: rgba(255,176,0,0.12);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 11px;
+  }
+
+  /* Error banner */
+  .error-banner {
+    background: rgba(224,85,99,0.10);
+    border: 1px solid rgba(224,85,99,0.30);
+    border-radius: 10px;
+    padding: 13px 16px;
+    font-size: 12px;
+    color: var(--c-sell);
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+
+  /* Loading */
+  .loading {
+    text-align: center;
+    padding: 64px 20px;
+    color: var(--dim);
+    font-size: 12px;
+  }
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid var(--grid);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.65s linear infinite;
+    margin-right: 10px;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <a href="/" class="nav-back">← RRG</a>
+    <h1>Schwab Account<span class="sub">Positions · Sector Signals</span></h1>
+  </div>
+  <div id="meta-info" class="meta"></div>
+</header>
+
+<!-- No credentials configured -->
+<div id="no-creds" style="display:none" class="no-creds-banner">
+  <strong>API keys not found.</strong><br>
+  Add <code>SCHWAB_CLIENT_ID</code>, <code>SCHWAB_CLIENT_SECRET</code>, and <code>SCHWAB_URI</code>
+  to your <code>.env</code> file, then restart the server.
+</div>
+
+<!-- OAuth connect flow -->
+<div id="auth-panel" style="display:none" class="auth-panel">
+  <div class="auth-title">Connect Schwab</div>
+  <div class="auth-desc">
+    Authorize this tool to read your account positions. Your credentials never leave this machine.
+  </div>
+
+  <div class="auth-step">Step 1 — Open Schwab authorization</div>
+  <button class="btn primary" id="open-auth-btn">Open Schwab Login ↗</button>
+
+  <div id="paste-section" style="display:none">
+    <div class="auth-step">Step 2 — Paste the redirect URL</div>
+    <p class="paste-hint">
+      After logging in, Schwab redirects to a page that <b>won't load</b> — that's expected.
+      Copy the full URL from your browser's address bar and paste it below.
+    </p>
+    <input class="paste-input" id="callback-url-input" type="text"
+           placeholder="https://127.0.0.1?code=…&session=…" />
+    <button class="btn primary" id="exchange-btn">Connect Account</button>
+  </div>
+
+  <div id="auth-error" style="display:none" class="error-banner"></div>
+
+  <div class="auth-note">
+    Uses OAuth 2.0 — no passwords stored. Tokens are saved to <code>.env</code> and auto-refreshed.
+    Refresh tokens expire after 7 days of inactivity; reconnect when prompted.
+  </div>
+</div>
+
+<!-- Positions view -->
+<div id="positions-panel" style="display:none">
+  <div id="summary-row" class="summary-row"></div>
+
+  <div class="action-bar">
+    <button class="btn" id="refresh-btn">Refresh</button>
+    <button class="btn" id="export-btn">Export CSV</button>
+    <span id="positions-status"></span>
+    <button class="btn" id="disconnect-btn" style="margin-left:auto;color:var(--c-sell);border-color:rgba(224,85,99,0.3)">Disconnect</button>
+  </div>
+
+  <div id="positions-error" style="display:none" class="error-banner"></div>
+  <div id="loading-msg" class="loading" style="display:none">
+    <span class="spinner"></span>Loading positions…
+  </div>
+  <div id="table-wrap" class="table-wrap" style="display:none">
+    <table>
+      <thead>
+        <tr>
+          <th>Symbol</th>
+          <th>Description</th>
+          <th class="r">Qty</th>
+          <th class="r">Mkt&nbsp;Value</th>
+          <th class="r">Day&nbsp;P&amp;L</th>
+          <th class="r">Open&nbsp;P&amp;L</th>
+          <th>Sector</th>
+          <th>Signal</th>
+          <th class="c">Action</th>
+        </tr>
+      </thead>
+      <tbody id="positions-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Formatting helpers
+// ---------------------------------------------------------------------------
+function fmt$(v) {
+  const abs = Math.abs(v);
+  const s = abs >= 1e6 ? (abs / 1e6).toFixed(2) + 'M'
+          : abs >= 1e3 ? (abs / 1e3).toFixed(1) + 'K'
+          : abs.toFixed(2);
+  return (v < 0 ? '-$' : '$') + s;
+}
+function fmtQty(v) {
+  return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(4);
+}
+function pnlClass(v) { return v >= 0 ? 'pos' : 'neg'; }
+function pnlSign(v)  { return v >= 0 ? '+' : ''; }
+
+const ACTION_CLASS = {
+  BUY: 'ab-buy', HOLD: 'ab-hold', SELL: 'ab-sell',
+  WATCH: 'ab-watch', AVOID: 'ab-avoid',
+};
+
+function actionBadge(action) {
+  const cls = ACTION_CLASS[action] || 'ab-none';
+  return `<span class="action-badge ${cls}">${action}</span>`;
+}
+
+function signalCell(pos) {
+  if (!pos.sector_etf) return `<span style="color:#4a5568">—</span>`;
+  const arrow = pos.rrg_heading || '·';
+  const quad  = (pos.rrg_quadrant || '')
+    .replace('Improving', 'Impr').replace('Weakening', 'Weak')
+    .replace('Leading', 'Lead').replace('Lagging', 'Lag');
+  return `<div class="signal-cell">
+    <span class="sig-arrow">${arrow}</span>
+    <span class="sig-quad">${quad}</span>
+  </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Render
+// ---------------------------------------------------------------------------
+function renderSummary(positions, balances) {
+  let totalMkt = 0, totalDay = 0, totalOpen = 0;
+  for (const p of positions) {
+    totalMkt  += p.market_value || 0;
+    totalDay  += p.day_pnl     || 0;
+    totalOpen += p.open_pnl    || 0;
+  }
+
+  // Use liquidation value from balances if available
+  let liqVal = null;
+  for (const acct of Object.values(balances || {})) {
+    if (acct.liquidation_value) liqVal = (liqVal || 0) + acct.liquidation_value;
+  }
+  const totalVal = liqVal !== null ? liqVal : totalMkt;
+
+  document.getElementById('summary-row').innerHTML = `
+    <div class="summary-card">
+      <div class="card-label">Portfolio Value</div>
+      <div class="card-value">${fmt$(totalVal)}</div>
+      <div class="card-sub">${positions.length} position${positions.length !== 1 ? 's' : ''}</div>
+    </div>
+    <div class="summary-card">
+      <div class="card-label">Day P&amp;L</div>
+      <div class="card-value ${pnlClass(totalDay)}">${pnlSign(totalDay)}${fmt$(totalDay)}</div>
+    </div>
+    <div class="summary-card">
+      <div class="card-label">Unrealized P&amp;L</div>
+      <div class="card-value ${pnlClass(totalOpen)}">${pnlSign(totalOpen)}${fmt$(totalOpen)}</div>
+    </div>`;
+}
+
+function renderTable(positions) {
+  const tbody = document.getElementById('positions-tbody');
+  tbody.innerHTML = '';
+  for (const p of positions) {
+    const sectorCell = p.sector_etf
+      ? `<span style="font-weight:600">${p.sector_etf}</span>`
+      : `<span style="color:#4a5568">${p.asset_type === 'EQUITY' ? '?' : '—'}</span>`;
+
+    const tr = document.createElement('tr');
+    // Use rrg_why as a tooltip on the signal cell if available
+    const whyAttr = p.rrg_why ? ` title="${p.rrg_why.replace(/"/g, '&quot;')}"` : '';
+    tr.innerHTML = `
+      <td><div class="sym">${p.symbol}</div></td>
+      <td><div class="desc" title="${(p.description || '').replace(/"/g,'&quot;')}">${p.description || '—'}</div></td>
+      <td class="r">${fmtQty(p.quantity)}</td>
+      <td class="r">${fmt$(p.market_value)}</td>
+      <td class="r ${pnlClass(p.day_pnl)}">${pnlSign(p.day_pnl)}${fmt$(p.day_pnl)}</td>
+      <td class="r ${pnlClass(p.open_pnl)}">${pnlSign(p.open_pnl)}${fmt$(p.open_pnl)}</td>
+      <td>${sectorCell}</td>
+      <td${whyAttr}>${signalCell(p)}</td>
+      <td class="c">${actionBadge(p.action)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Data loading
+// ---------------------------------------------------------------------------
+let lastPositionsData = null;
+
+async function loadPositions() {
+  document.getElementById('loading-msg').style.display      = 'block';
+  document.getElementById('table-wrap').style.display       = 'none';
+  document.getElementById('positions-error').style.display  = 'none';
+  document.getElementById('positions-status').textContent   = '';
+  document.getElementById('refresh-btn').disabled           = true;
+
+  try {
+    const resp = await fetch('/api/schwab/positions');
+    if (resp.status === 401) {
+      // Token expired and refresh failed — drop back to auth
+      const status = await (await fetch('/api/schwab/status')).json();
+      showPositions(false);
+      showAuth(status);
+      return;
+    }
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      throw new Error(err.error || 'Unknown error');
+    }
+    const data = await resp.json();
+    lastPositionsData = data;
+
+    renderSummary(data.positions, data.balances);
+    renderTable(data.positions);
+
+    document.getElementById('loading-msg').style.display    = 'none';
+    document.getElementById('table-wrap').style.display     = 'block';
+    document.getElementById('positions-status').textContent = `${data.positions.length} position${data.positions.length !== 1 ? 's' : ''}`;
+    document.getElementById('meta-info').innerHTML          = `Updated<br><b>${data.updated}</b>`;
+
+  } catch (e) {
+    document.getElementById('loading-msg').style.display   = 'none';
+    const el = document.getElementById('positions-error');
+    el.textContent    = 'Error loading positions: ' + e.message;
+    el.style.display  = 'block';
+  } finally {
+    document.getElementById('refresh-btn').disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Auth flow
+// ---------------------------------------------------------------------------
+function showPositions(visible) {
+  document.getElementById('positions-panel').style.display = visible ? 'block' : 'none';
+}
+function showAuth(status) {
+  document.getElementById('auth-panel').style.display = 'block';
+
+  document.getElementById('open-auth-btn').onclick = () => {
+    window.open(status.auth_url, '_blank');
+    document.getElementById('paste-section').style.display = 'block';
+  };
+}
+
+async function init() {
+  let status;
+  try {
+    status = await (await fetch('/api/schwab/status')).json();
+  } catch (e) {
+    document.getElementById('no-creds').style.display = 'block';
+    document.getElementById('no-creds').textContent   = 'Could not reach server: ' + e.message;
+    return;
+  }
+
+  if (!status.has_credentials) {
+    document.getElementById('no-creds').style.display = 'block';
+    return;
+  }
+
+  // Has token or refresh — positions endpoint handles auto-refresh
+  if (status.has_token || status.has_refresh) {
+    showPositions(true);
+    loadPositions();
+    return;
+  }
+
+  showAuth(status);
+}
+
+document.getElementById('exchange-btn').addEventListener('click', async () => {
+  const cbUrl = document.getElementById('callback-url-input').value.trim();
+  if (!cbUrl) return;
+
+  const errEl = document.getElementById('auth-error');
+  errEl.style.display = 'none';
+  const btn = document.getElementById('exchange-btn');
+  btn.disabled    = true;
+  btn.textContent = 'Connecting…';
+
+  try {
+    const resp = await fetch('/api/schwab/exchange', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ callback_url: cbUrl }),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ error: resp.statusText }));
+      throw new Error(err.error || 'Exchange failed');
+    }
+    // Success — reload into positions view
+    window.location.reload();
+  } catch (e) {
+    errEl.textContent   = 'Authentication failed: ' + e.message;
+    errEl.style.display = 'block';
+    btn.disabled        = false;
+    btn.textContent     = 'Connect Account';
+  }
+});
+
+function exportCSV() {
+  if (!lastPositionsData) return;
+  const cols = ['Symbol','Description','Type','Qty','Avg Price','Market Value','Day P&L','Day P&L %','Open P&L','Sector ETF','RRG Quadrant','RRG Signal','Action'];
+  const esc  = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = [cols.map(esc).join(',')];
+  for (const p of lastPositionsData.positions) {
+    rows.push([
+      p.symbol, p.description, p.asset_type,
+      p.quantity, p.average_price, p.market_value,
+      p.day_pnl, p.day_pnl_pct, p.open_pnl,
+      p.sector_etf ?? '', p.rrg_quadrant ?? '', p.rrg_call ?? '', p.action ?? '',
+    ].map(esc).join(','));
+  }
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `schwab-positions-${lastPositionsData.updated?.slice(0,10) || 'export'}.csv`;
+  a.click();
+}
+
+document.getElementById('refresh-btn').addEventListener('click', loadPositions);
+document.getElementById('export-btn').addEventListener('click', exportCSV);
+
+document.getElementById('disconnect-btn').addEventListener('click', async () => {
+  if (!confirm('Remove saved tokens and reconnect?')) return;
+  await fetch('/api/schwab/disconnect', { method: 'POST' });
+  window.location.reload();
+});
+
+init();
+</script>
+</body>
+</html>
