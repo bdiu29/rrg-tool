@@ -8,6 +8,7 @@ Routes registered:
 """
 
 import math
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -52,9 +53,38 @@ SECTOR_NAMES = {
 
 BENCHMARK = "SPY"
 
-# Stretch normalized z-scores to fill the chart frame.
-RATIO_SCALE = 3.0
-MOM_SCALE   = 1.8
+# Weekly: per-ticker z-scores stretched to fill the frame.
+RATIO_SCALE_WK = 3.5
+MOM_SCALE_WK   = 2.2
+# Daily: DIRECT affine scaling of the raw trend ratio and its ROC — no z-scores.
+# Per-ticker z-normalization equalizes tail travel across sectors, but the
+# StockCharts daily reference (sp-rrg.png, 2026-06-09) shows differential travel
+# (XLE sweeps ~6 x-units while XLU crawls ~1); one shared linear map preserves
+# that. Fitted by calibrate_rrg.py (mean head error 0.75, per-point deltas ≤ ~1)
+# — rerun that script to recalibrate.
+RATIO_C_D = 100.550   # x offset
+RATIO_K_D = 1.678     # x gain on (trend ratio − 100)
+MOM_K_D   = 1.626     # y gain on the lightly-smoothed 15-day ROC
+
+# Elliott-wave phase model (daily momentum axis). Momentum that opposes the
+# prevailing trend is a corrective leg — a wave-2/4 pullback in an uptrend or a
+# wave-B bounce in a downtrend — and gets squashed at the 100 line: corrections
+# approach the quadrant boundary but don't cross it. Only a genuine trend flip
+# (t_soft ≈ 0 then sign change = new wave 1) releases the cap, so quadrant
+# crossings reflect motive→corrective alternation rather than every bounce.
+TREND_D   = 60     # trading days for the soft trend direction (daily)
+TREND_W   = 12     # bars for the soft trend direction (weekly, calls only)
+TREND_ETA = 1.0    # tanh scale: how much trend-ratio travel = full conviction
+MOM_TAU   = 0.11   # corrective cap in raw-momentum units (≈0.2 y-units after K)
+
+# Conviction gates for the Elliott-Wave rotation logic. `directness` = net displacement /
+# path length: ~1.0 for a straight, committed leg; low when the tail wanders. Tuned to fire
+# on the macro impulse (wave 3) and the exhaustion (wave 5) while sitting through the
+# corrective wiggles (waves 2 & 4) that whipsaw a single-bar model. Raise DIRECT_GATE to be
+# even less reactive; lower it to catch turns earlier.
+DIRECT_GATE = 0.52   # below this the tail is corrective chop → no directional call
+MOVE_GATE   = 1.0    # min net displacement (chart units) for a leg to count as real
+DIV_MARGIN  = 0.6    # momentum must fall this far below its tail peak to flag a wave-5 roll-over
 
 # ---------------------------------------------------------------------------
 # Math
@@ -71,6 +101,17 @@ def _rolling_zscore(series, window):
     mean = series.rolling(window=window, min_periods=window).mean()
     std  = series.rolling(window=window, min_periods=window).std(ddof=0)
     return 100 + (series - mean) / std.replace(0, np.nan)
+
+
+def _jdk_ratio_signal(series, fast_span, slow_span):
+    """
+    JdK-style RS-Ratio: fast_EMA / slow_EMA * 100.
+    Stays above 100 while the sector leads (fast > slow) — unlike flat z-score
+    which mean-reverts and kills horizontal tail movement.
+    """
+    fast = series.ewm(span=fast_span, adjust=False).mean()
+    slow = series.ewm(span=slow_span, adjust=False).mean()
+    return fast / slow * 100
 
 
 def _quadrant(ratio, momentum):
@@ -151,62 +192,164 @@ def _distrib(ratios, moments):
     return int(max(0, min(100, round(50 + 6 * mom_slope + 3 * kick + 2 * extended))))
 
 
-def _rotation_call(ratios, moments, quadrant, accum, distrib, strength, heading_label):
+def _wave_phase(trend, mom):
+    """
+    Classify the head bar's Elliott-wave phase from the soft trend direction
+    and raw momentum. |trend| < 0.25 = the higher-degree trend itself is
+    turning (potential wave 1 / wave-5 top) — the zone where quadrant
+    crossings are legitimate.
+    """
+    if trend is None or mom is None or not (np.isfinite(trend) and np.isfinite(mom)):
+        return "—"
+    if abs(trend) < 0.25:
+        return "basing (trend turn)" if mom >= 0 else "topping (trend turn)"
+    if trend > 0:
+        return "impulse ↑ (wave 3/5)" if mom >= 0 else "pullback (wave 2/4)"
+    return "impulse ↓ (wave C/3)" if mom < 0 else "bounce (wave B)"
+
+
+def _rotation_call(ratios, moments, quadrant, accum, distrib, heading_label, phase="—"):
     """
     Translate the full picture into one actionable call:
       ROTATE IN / ROTATE OUT / HOLD / AVOID / WATCH
 
-    Decision logic follows tail direction + momentum conviction rather than
-    pure quadrant location. A stubby tail (strength < 18) is downgraded to
-    WATCH regardless of quadrant.
+    Reads the tail in Elliott-wave terms. A straight, committed leg
+    (directness >= DIRECT_GATE and net move >= MOVE_GATE) has impulse
+    character (wave 3 / 5) and may trigger a ROTATE call; a bent,
+    overlapping tail has corrective character (wave 2 / 4) and never does —
+    that's the whipsaw guard that keeps a 3-week pullback from reading as
+    rotation. Momentum sitting DIV_MARGIN below its tail peak while RS holds
+    its high is wave-5 exhaustion: the impulse is ending, trim into strength.
     """
-    rising    = heading_label in ("NE", "N", "E")
-    falling   = heading_label in ("SW", "S", "W")
-    weak_tail = strength < 18
+    if len(ratios) < 2:
+        return "WATCH", "Not enough tail history to judge"
 
-    if heading_label == "flat" or weak_tail:
-        if quadrant in ("Leading", "Weakening"):
-            return "WATCH",      "Little relative movement — tail too short to act on"
-        if quadrant == "Lagging":
-            return "AVOID",      "Weak and going nowhere — no upturn to act on"
-        return     "WATCH",      "Improving but tail is short — wait for a committed turn"
+    net  = math.hypot(ratios[-1] - ratios[0], moments[-1] - moments[0])
+    path = sum(
+        math.hypot(ratios[i] - ratios[i - 1], moments[i] - moments[i - 1])
+        for i in range(1, len(ratios))
+    )
+    directness = net / path if path > 1e-9 else 0.0
+    impulse    = directness >= DIRECT_GATE and net >= MOVE_GATE
+    exhausted  = (
+        ratios[-1] >= max(ratios) - 0.3
+        and max(moments) - moments[-1] >= DIV_MARGIN
+    )
+
+    rising   = heading_label in ("NE", "N", "E")
+    falling  = heading_label in ("SW", "S", "W")
+    bounce   = phase.startswith("bounce")     # corrective rally inside a downtrend
+    pullback = phase.startswith("pullback")   # corrective dip inside an uptrend
+
+    if not impulse:
+        if quadrant == "Leading":
+            return "HOLD",  "Leader in a corrective pause (wave-2/4 character) — trend intact, sit through it"
+        if quadrant == "Weakening":
+            return "WATCH", "Choppy drift in Weakening — could be a wave 4 before another leg; wait for a committed move"
+        if quadrant == "Improving":
+            return "WATCH", "Improving but the tail is corrective chop — no impulse to join yet"
+        return     "AVOID", "Lagging with no committed leg — nothing to act on"
 
     if quadrant == "Improving":
+        if rising and bounce:
+            return "WATCH",      "Corrective bounce (wave B) — downtrend intact, not a new impulse"
         if rising:
-            return "ROTATE IN",  "Improving + heading NE — early upside, momentum has turned"
-        return     "WATCH",      "Improving but not yet heading up — wait for a committed turn"
+            return "ROTATE IN",  "Committed leg up through Improving — wave-3 character, momentum leading RS"
+        return     "WATCH",      "Improving but the leg points down — failed turn, stand by"
 
     if quadrant == "Leading":
-        if falling or distrib >= 62:
-            return "ROTATE OUT", "Leading but rolling over — momentum fading, trim into strength"
-        return     "HOLD",       "Leading and still rising — stay with the leader"
+        if exhausted:
+            return "ROTATE OUT", "Wave-5 exhaustion — RS at its highs but momentum diverging; trim into strength"
+        if pullback:
+            return "HOLD",       "Wave-2/4 pullback in an uptrend — momentum dip, trend intact"
+        if falling or distrib >= 70:
+            return "ROTATE OUT", "Leading but rolling over — momentum fading, reduce before RS follows"
+        return     "HOLD",       "Leading on a committed leg — ride the impulse"
 
     if quadrant == "Weakening":
+        if pullback:
+            return "WATCH",      "Wave-2/4 pullback below the line — uptrend not broken yet, watch for the next leg"
         if rising and accum >= 60:
-            return "WATCH",      "Weakening but curling back up — possible re-acceleration"
-        return     "ROTATE OUT", "Weakening — outperforming but momentum gone, reduce exposure"
+            return "WATCH",      "Weakening but impulsing back up — possible new wave 1; confirm before adding"
+        return     "ROTATE OUT", "Committed leg down out of Leading — distribution underway, reduce exposure"
 
     # Lagging
+    if rising and bounce:
+        return     "WATCH",      "Corrective bounce (wave B) inside the downtrend — wait for a real trend flip"
     if rising:
-        return     "ROTATE IN",  "Lagging but turning up — earliest signal, momentum leading RS"
-    return         "AVOID",      "Lagging and not turning — weak with no upturn, stand aside"
+        return     "ROTATE IN",  "Committed turn up from Lagging — earliest entry, momentum turns first"
+    return         "AVOID",      "Impulsing lower in Lagging — the down-leg isn't finished"
 
 
-def compute_rrg(tickers, benchmark, interval, tail=6, rs_window=14, mom_window=14, smooth=5):
+_PRICE_CACHE = {}     # (interval, sorted symbols) -> (fetched_at, close_df)
+_PRICE_TTL   = 600    # seconds — date-stepping slices this cache instead of re-downloading
+
+
+def _fetch_close(symbols, interval, period):
+    key = (interval, tuple(sorted(symbols)))
+    hit = _PRICE_CACHE.get(key)
+    if hit and time.time() - hit[0] < _PRICE_TTL:
+        return hit[1]
+    # yfinance has no native 2h bars — fetch 60m and resample below.
+    yf_interval = "60m" if interval in ("1h", "2h") else interval
+    raw = yf.download(
+        symbols, period=period, interval=yf_interval,
+        auto_adjust=True, progress=False, group_by="column",
+    )
+    close = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw.to_frame()
+    close = close.dropna(how="all").ffill()
+    if interval == "2h":
+        close = close.resample("2h").last().dropna(how="all")
+    _PRICE_CACHE[key] = (time.time(), close)
+    return close
+
+
+def compute_rrg(tickers, benchmark, interval, tail=6, rs_window=None, mom_window=None, smooth=None, asof=None):
     """
     Returns {sectors: {ticker: {...}}, best: {...}, date: "YYYY-MM-DD"}.
     Each ticker dict includes ratio/momentum tails, quadrant, rotation call, and scores.
+
+    Both intervals use the JdK-style chain: RS-Ratio = z-scaled fast/slow EMA ratio of
+    RS (a trend measure, so x travels with the trend), RS-Momentum = z-scaled ROC of
+    that trend (y is the velocity of x, so tails arc clockwise like a real RRG). The
+    slow EMA keeps the macro character — a 3-week wave-2 pullback won't flip x, a real
+    trend change will.
+
+    `asof` ("YYYY-MM-DD") truncates the price history so the chart shows the RRG as of
+    a past date. All windows are trailing, so rolling back only removes head points —
+    historical tail points stay put.
     """
-    period  = "2y" if interval == "1wk" else "6mo"
+    if interval == "1wk":
+        smooth       = smooth     or 10   # fast EMA span (10 weeks)
+        rs_window    = rs_window  or 40   # slow EMA span (~9 months)
+        scale_window = 52                 # z-score normalization window (visual spread only)
+        mom_window   = mom_window or 26   # 6-month momentum normalization
+        mom_diff     = 5                  # 5-week ROC of the RS trend
+        mom_smooth   = 3                  # 3-week EMA on the ROC
+        trend_len    = TREND_W
+        period       = "3y"
+    else:
+        # Daily & intraday — 50/140 trading-day macro lens, DIRECT-scaled
+        # rather than z-normalized; see RATIO_K_D note above. Intraday (1h/2h)
+        # is the same lens at finer bar resolution — a debug view with a
+        # smoothly-updating head, not a faster story. Windows are in trading
+        # days, converted to bars here. mom_smooth is deliberately LIGHT:
+        # momentum must lead the ratio for leaders to arc over the top of the
+        # oval (heavy smoothing = lag = straight diagonal tails, no rollover).
+        bpd = {"1d": 1.0, "2h": 3.25, "1h": 6.5}[interval]   # bars per trading day
+        smooth     = smooth     or max(2, round(50 * bpd))   # fast EMA (≈10 weeks)
+        rs_window  = rs_window  or max(3, round(140 * bpd))  # slow EMA (≈28 weeks)
+        mom_diff   = max(1, round(15 * bpd))                  # 3-week ROC of the RS trend
+        mom_smooth = max(2, round(3 * bpd))                   # 3-day EMA on the ROC
+        trend_len  = max(1, round(TREND_D * bpd))
+        period     = "3y" if interval == "1d" else "730d"     # yfinance 60m history limit
+
     symbols = tickers + [benchmark]
-
-    raw = yf.download(
-        symbols, period=period, interval=interval,
-        auto_adjust=True, progress=False, group_by="column",
-    )
-
-    close = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw.to_frame()
-    close = close.dropna(how="all").ffill()
+    close   = _fetch_close(symbols, interval, period)
+    if asof:
+        close = close.loc[:asof]
+        if close.empty:
+            raise ValueError(f"No price data on or before {asof}")
     bench = close[benchmark]
 
     bench_prices = bench.dropna()
@@ -219,17 +362,40 @@ def compute_rrg(tickers, benchmark, interval, tail=6, rs_window=14, mom_window=1
         if t not in close.columns or close[t].dropna().empty:
             continue
 
-        rs       = (close[t] / bench) * 100
-        rs_s     = rs.ewm(span=smooth, adjust=False).mean()
-        rs_ratio = _rolling_zscore(rs_s, rs_window)
+        rs = (close[t] / bench) * 100
 
-        mom_raw  = rs_ratio.diff().ewm(span=smooth, adjust=False).mean()
-        rs_mom   = _rolling_zscore(mom_raw, mom_window)
+        ratio_raw = _jdk_ratio_signal(rs, smooth, rs_window)
+        mom_raw   = ratio_raw.diff(mom_diff).ewm(span=mom_smooth, adjust=False).mean()
 
-        rs_ratio = 100 + (rs_ratio - 100) * RATIO_SCALE
-        rs_mom   = 100 + (rs_mom   - 100) * MOM_SCALE
+        # Soft trend direction in (-1, 1) — the higher-degree wave that the EW
+        # phase model measures legs against.
+        t_soft = np.tanh(ratio_raw.diff(trend_len) / TREND_ETA)
 
-        df = pd.DataFrame({"ratio": rs_ratio, "momentum": rs_mom}).dropna().tail(tail)
+        if interval == "1wk":
+            rs_ratio = 100 + (_rolling_zscore(ratio_raw, scale_window) - 100) * RATIO_SCALE_WK
+            rs_mom   = 100 + (_rolling_zscore(mom_raw, mom_window) - 100) * MOM_SCALE_WK
+        else:
+            # EW phase squash — see the MOM_TAU note above.
+            w        = t_soft.abs().where(t_soft * mom_raw < 0, 0.0)
+            capped   = MOM_TAU * np.tanh(mom_raw / MOM_TAU)
+            m_adj    = (1 - w) * mom_raw + w * capped
+            rs_ratio = RATIO_C_D + (ratio_raw - 100) * RATIO_K_D
+            rs_mom   = 100 + m_adj * MOM_K_D
+
+        df_all = pd.DataFrame({"ratio": rs_ratio, "momentum": rs_mom}).dropna()
+        if interval == "1d":
+            # One tail point per calendar week, anchored to each week's LAST bar —
+            # not counted back from the newest bar — so historical points stay put
+            # when the as-of date steps day by day. The newest (partial) week's
+            # last bar is the live head.
+            iso_week = df_all.index.strftime("%G-%V")
+            df_all   = df_all.groupby(iso_week, sort=False).tail(1)
+        elif interval in ("1h", "2h"):
+            # Intraday debug view: one tail point per trading day (last bar of
+            # each session); the newest (partial) day's last bar is the head.
+            day    = df_all.index.strftime("%Y-%m-%d")
+            df_all = df_all.groupby(day, sort=False).tail(1)
+        df = df_all.tail(tail)
         if df.empty:
             continue
 
@@ -248,8 +414,13 @@ def compute_rrg(tickers, benchmark, interval, tail=6, rs_window=14, mom_window=1
         distrib  = _distrib(ratios, moments)
         strength = _tail_strength(ratios, moments)
         arrow, heading, angle = _tail_heading(ratios, moments)
+
+        ts_head  = t_soft.reindex(df.index).iloc[-1]
+        mom_head = mom_raw.reindex(df.index).iloc[-1]
+        phase    = _wave_phase(ts_head, mom_head)
+
         call, rationale = _rotation_call(
-            ratios, moments, quadrant, accum, distrib, strength, heading
+            ratios, moments, quadrant, accum, distrib, heading, phase
         )
 
         results[t] = {
@@ -260,6 +431,7 @@ def compute_rrg(tickers, benchmark, interval, tail=6, rs_window=14, mom_window=1
             "change_pct":    change_pct,
             "rel_pct":       rel_pct,
             "quadrant":      quadrant,
+            "phase":         phase,
             "dir":           _direction(ratios, moments),
             "accum":         accum,
             "distrib":       distrib,
@@ -302,15 +474,22 @@ def _handle_index(req):
 
 def _handle_rrg(req):
     timeframe = req.qs.get("timeframe", ["weekly"])[0]
-    interval  = "1wk" if timeframe == "weekly" else "1d"
-    tail      = int(req.qs.get("tail", ["6"])[0])
-    tail      = max(3, min(tail, 14))
+    interval = {"weekly": "1wk", "daily": "1d", "2h": "2h", "1h": "1h"}.get(timeframe, "1wk")
+    tail     = int(req.qs.get("tail", ["6"])[0])
+    tail     = max(3, min(tail, 14))
+    asof     = req.qs.get("asof", [""])[0].strip() or None
+    if asof:
+        try:
+            datetime.strptime(asof, "%Y-%m-%d")
+        except ValueError:
+            return Response.error("asof must be YYYY-MM-DD", status=400)
     try:
-        result = compute_rrg(DEFAULT_TICKERS, BENCHMARK, interval, tail)
+        result = compute_rrg(DEFAULT_TICKERS, BENCHMARK, interval, tail, asof=asof)
         return Response.json({
             "benchmark": BENCHMARK,
             "timeframe": timeframe,
             "tail":      tail,
+            "asof":      asof,
             "updated":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "date":      result.get("date"),
             "sectors":   result["sectors"],

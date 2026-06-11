@@ -114,6 +114,26 @@
     background: var(--accent); cursor: pointer; border: none;
   }
 
+  /* As-of date rollback control */
+  .date-nav {
+    display: flex; align-items: center; gap: 2px;
+    background: var(--panel); border: 1px solid var(--grid);
+    border-radius: 8px; padding: 2px;
+  }
+  .date-nav button {
+    background: transparent; border: none; color: var(--dim);
+    font-family: inherit; font-size: 12px; padding: 7px 9px;
+    cursor: pointer; border-radius: 6px; transition: all 0.15s;
+  }
+  .date-nav button:hover { color: var(--ink); background: var(--grid); }
+  .date-nav button.live.active { background: var(--accent); color: #0a0e14; font-weight: 600; }
+  .date-nav input[type="date"] {
+    background: transparent; border: none; color: var(--ink);
+    font-family: inherit; font-size: 12px; width: 128px; padding: 4px 0;
+    color-scheme: dark;
+  }
+  .date-nav input[type="date"]:focus { outline: none; }
+
   .meta { font-size: 11px; color: var(--dim); text-align: right; line-height: 1.6; }
   .meta b { color: var(--ink); font-weight: 600; }
 
@@ -373,11 +393,22 @@
         <div class="toggle" id="tf-toggle">
           <button data-tf="weekly" class="active">Weekly</button>
           <button data-tf="daily">Daily</button>
+          <button data-tf="2h">2H</button>
+          <button data-tf="1h">1H</button>
         </div>
       </div>
       <div class="ctl">
-        <span class="ctl-label">Tail · <span id="tail-val">4</span></span>
-        <input type="range" id="tail-slider" class="slider" min="3" max="12" step="1" value="4">
+        <span class="ctl-label">As of date</span>
+        <div class="date-nav">
+          <button id="date-prev" title="Step back">◀</button>
+          <input type="date" id="asof-date">
+          <button id="date-next" title="Step forward">▶</button>
+          <button id="date-live" class="live active">Live</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <span class="ctl-label">Tail · <span id="tail-val">6</span></span>
+        <input type="range" id="tail-slider" class="slider" min="3" max="12" step="1" value="6">
       </div>
       <div class="meta" id="meta">—</div>
     </div>
@@ -459,7 +490,8 @@ const SECTOR_COLORS = {
 const colorFor = (t) => SECTOR_COLORS[t] || '#7c8694';
 const NS = 'http://www.w3.org/2000/svg';
 let currentTF = 'weekly';
-let currentTail = 4;
+let currentTail = 6;
+let currentAsof = null;   // 'YYYY-MM-DD' when rolled back, null = live
 let muted = new Set();
 let lastData = null;
 
@@ -488,7 +520,8 @@ async function load() {
   $('chart').style.display = 'none';
   $('state').innerHTML = '<div class="spinner"></div>Loading market data…';
   try {
-    const res = await fetch(`/api/rrg?timeframe=${currentTF}&tail=${currentTail}`);
+    const asofQS = currentAsof ? `&asof=${currentAsof}` : '';
+    const res = await fetch(`/api/rrg?timeframe=${currentTF}&tail=${currentTail}${asofQS}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     lastData = data;
@@ -504,7 +537,9 @@ function render(data) {
   if (!keys.length) { $('state').innerHTML = 'No data returned.'; return; }
 
   $('bench').textContent = data.benchmark;
-  $('meta').innerHTML = `<b>${keys.length}</b> sectors · ${data.tail}-pt tail<br>updated ${data.updated}`;
+  $('meta').innerHTML = `<b>${keys.length}</b> sectors · ${data.tail}-pt tail<br>` +
+    (data.asof ? `<span style="color:var(--accent)">as of ${data.date}</span>`
+               : `updated ${data.updated}`);
 
   // --- Independent per-axis bounds, fit to the data (like his chart) ---
   // Using one scale for both axes squashes momentum; scale each on its own.
@@ -582,6 +617,18 @@ function render(data) {
     tx.textContent = l.t; svg.appendChild(tx);
   });
 
+  // Timeframe watermark — drawn into the SVG so it lands in Copy exports
+  // and screenshots are self-identifying. Sits a line below the corner
+  // quadrant labels so long "as of" text can't collide with them.
+  const LENS_TEXT = {
+    weekly: 'WEEKLY · 10/40w', daily: 'DAILY · 50/140d',
+    '2h': '2H · 50/140d lens', '1h': '1H · 50/140d lens',
+  };
+  const lens = LENS_TEXT[data.timeframe] || data.timeframe.toUpperCase();
+  const wm = el('text', { x: (PL + PR) / 2, y: PT + 36, fill: 'var(--dim)', 'text-anchor': 'middle', 'font-size': 11, 'letter-spacing': '2' });
+  wm.textContent = lens + (data.asof ? ` · as of ${data.date}` : '');
+  svg.appendChild(wm);
+
   // Axis titles
   const ax = el('text', { x: (PL + PR) / 2, y: H - 6, fill: 'var(--dim)', 'text-anchor': 'middle', 'font-size': 11 });
   ax.textContent = 'JdK RS-Ratio →'; svg.appendChild(ax);
@@ -607,22 +654,22 @@ function render(data) {
     // hollow markers for every point except the latest (filled to hide the line)
     for (let j = 0; j < n - 1; j++) {
       svg.appendChild(el('circle', {
-        cx: xy[j][0], cy: xy[j][1], r: 2.7,
-        fill: 'var(--plot-bg)', stroke: color, 'stroke-width': 1.5,
+        cx: xy[j][0], cy: xy[j][1], r: 2.2,
+        fill: 'var(--plot-bg)', stroke: color, 'stroke-width': 1.3,
       }));
     }
 
     // solid head = latest data point (no outline)
     const [hx, hy] = xy[n - 1];
-    const head = el('circle', { cx: hx, cy: hy, r: 5.5, fill: color });
+    const head = el('circle', { cx: hx, cy: hy, r: 4.5, fill: color });
     head.setAttribute('class', 'node-dot');
     head.addEventListener('mousemove', (ev) => showTip(ev, k, s, color));
     head.addEventListener('mouseleave', hideTip);
-    head.addEventListener('mouseenter', () => head.setAttribute('r', 7));
-    head.addEventListener('mouseleave', () => head.setAttribute('r', 5.5));
+    head.addEventListener('mouseenter', () => head.setAttribute('r', 5.5));
+    head.addEventListener('mouseleave', () => head.setAttribute('r', 4.5));
     svg.appendChild(head);
 
-    const lbl = el('text', { x: hx + 9, y: hy + 3.5, fill: color });
+    const lbl = el('text', { x: hx, y: hy - 9, fill: color, 'text-anchor': 'middle' });
     lbl.setAttribute('class', 'node-label');
     lbl.textContent = k;
     svg.appendChild(lbl);
@@ -667,7 +714,8 @@ function showTip(ev, k, s, color) {
     <div class="tt-row">${s.name}</div>
     <div class="tt-row">RS-Ratio: <b>${r.toFixed(2)}</b></div>
     <div class="tt-row">RS-Mom: <b>${m.toFixed(2)}</b></div>
-    <div class="tt-row">Quadrant: <b>${quad}</b></div>`;
+    <div class="tt-row">Quadrant: <b>${quad}</b></div>
+    <div class="tt-row">Phase: <b>${s.phase || '—'}</b></div>`;
   tt.style.opacity = '1';
   tt.style.left = (ev.clientX + 16) + 'px';
   tt.style.top = (ev.clientY + 16) + 'px';
@@ -856,6 +904,31 @@ const slider = $('tail-slider');
 slider.addEventListener('input', () => { $('tail-val').textContent = slider.value; });
 slider.addEventListener('change', () => { currentTail = +slider.value; load(); });
 
+// ---- As-of date rollback ----
+// History is fixed (all windows are trailing), so rolling back only removes
+// head points — useful for comparing today's chart against an older reference.
+const asofInput = $('asof-date');
+const todayISO = () => new Date().toISOString().slice(0, 10);
+asofInput.max = todayISO();
+
+function setAsof(d) {                       // 'YYYY-MM-DD' or null for live
+  currentAsof = d;
+  asofInput.value = d || '';
+  $('date-live').classList.toggle('active', !d);
+  load();
+}
+function stepAsof(dir) {
+  const days = (currentTF === 'weekly' ? 7 : 1) * dir;
+  const base = currentAsof ? new Date(currentAsof + 'T12:00:00Z') : new Date();
+  base.setUTCDate(base.getUTCDate() + days);
+  const iso = base.toISOString().slice(0, 10);
+  setAsof(iso >= todayISO() ? null : iso);  // stepping to/past today = back to live
+}
+$('date-prev').addEventListener('click', () => stepAsof(-1));
+$('date-next').addEventListener('click', () => stepAsof(1));
+$('date-live').addEventListener('click', () => setAsof(null));
+asofInput.addEventListener('change', () => setAsof(asofInput.value || null));
+
 // ---- Copy to clipboard ----
 function flashBtn(btn, msg) {
   const orig = btn.textContent;
@@ -994,7 +1067,7 @@ function copyCallsText(btn) {
   Object.entries(s).forEach(([k, d]) => {
     const score = (d.call === 'ROTATE IN' || d.call === 'HOLD') ? d.accum : d.distrib;
     const label = (d.call === 'ROTATE IN' || d.call === 'HOLD') ? 'Accum' : 'Dist ';
-    buckets[d.call]?.push({ k, score, line: `  ${k.padEnd(5)} ${d.name.padEnd(22)} ${(d.heading_arrow||'·').padEnd(2)} ${(d.heading||'flat').padEnd(4)} ${label} ${String(score).padStart(3)}  ${d.call_why}` });
+    buckets[d.call]?.push({ k, score, line: `  ${k.padEnd(5)} ${d.name.padEnd(22)} ${(d.heading_arrow||'·').padEnd(2)} ${(d.heading||'flat').padEnd(4)} ${label} ${String(score).padStart(3)}  [${d.phase || '—'}] ${d.call_why}` });
   });
 
   let text = `RRG Rotation Calls — ${tf} · ${lastData.date || ''}\n\n`;
