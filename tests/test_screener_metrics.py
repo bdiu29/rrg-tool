@@ -100,6 +100,65 @@ class TestComputeSnapshot(unittest.TestCase):
         self.assertLess(stale["date"], self.snap.loc["JUMP", "date"])
 
 
+class TestEMAs(unittest.TestCase):
+    def setUp(self):
+        self.snap = metrics.compute_snapshot(*_panels()).set_index("symbol")
+
+    def test_ema_flat_equals_price(self):
+        # FLAT pinned at 10 → EMA converges exactly to 10
+        self.assertAlmostEqual(self.snap.loc["FLAT", "ema20"], 10.0, places=6)
+        self.assertAlmostEqual(self.snap.loc["FLAT", "ema5"], 10.0, places=6)
+
+    def test_ema_min_periods_guard(self):
+        jump = self.snap.loc["JUMP"]
+        self.assertFalse(np.isnan(jump["ema5"]))
+        self.assertFalse(np.isnan(jump["ema50"]))
+        self.assertTrue(np.isnan(jump["ema200"]))   # only 70 bars
+
+
+class TestGoldenPocket(unittest.TestCase):
+    def _last(self, vals, pivot=3):
+        idx = _dates(len(vals))
+        close = pd.DataFrame({"A": list(map(float, vals))}, index=idx)
+        gp = metrics.golden_pocket(close + 0.05, close - 0.05, close, pivot=pivot)
+        return {k: v["A"].iloc[-1] for k, v in gp.items()}
+
+    # low(~10)→high(20) up-leg, price retraced ~71% down → golden pocket
+    BULL = [12, 11, 11, 10.5, 10.2, 10.5, 10.8, 10.3, 10.0,
+            11, 12, 13, 14, 15, 16, 17, 18, 19, 19.5, 20.0,
+            19.6, 19, 18.2, 17.4, 16.5, 15.6, 14.7, 13.8, 13.3, 13.0, 12.9, 12.85]
+
+    def test_bullish_in_pocket(self):
+        g = self._last(self.BULL)
+        self.assertEqual(g["gp_direction"], "bullish")
+        self.assertTrue(0.6 < g["gp_retrace"] < 0.8)
+        self.assertEqual(g["gp_in_pocket"], 1.0)
+        self.assertEqual(g["gp_approaching"], 0.0)
+        # pocket band straddles the current price
+        self.assertLess(g["gp_zone_low"], 13.0)
+        self.assertGreater(g["gp_zone_high"], 13.0)
+
+    def test_bullish_approaching(self):
+        vals = self.BULL[:20] + [19.6, 19, 18.2, 17.4, 16.8, 16.2, 15.6, 15.1,
+                                 14.8, 14.6, 14.55, 14.5]            # retrace ~0.55
+        g = self._last(vals)
+        self.assertEqual(g["gp_approaching"], 1.0)
+        self.assertEqual(g["gp_in_pocket"], 0.0)
+
+    def test_bearish_in_pocket(self):
+        vals = [8, 9, 9, 9.5, 9.8, 9.5, 9.2, 9.7, 10.0,
+                9, 8, 7, 6, 5, 4, 3, 2, 1, 0.6, 0.0,
+                0.4, 1, 1.8, 2.6, 3.5, 4.4, 5.3, 6.2, 6.7, 7.0, 7.1, 7.15]
+        g = self._last(vals)
+        self.assertEqual(g["gp_direction"], "bearish")
+        self.assertEqual(g["gp_in_pocket"], 1.0)
+
+    def test_flat_run_is_no_pivot(self):
+        # a perfectly flat series has no strict pivots → no leg → NaN retrace
+        g = self._last([10.0] * 30)
+        self.assertTrue(np.isnan(g["gp_retrace"]))
+
+
 class TestSessionMath(unittest.TestCase):
     def test_session_fraction(self):
         f = metrics.session_fraction

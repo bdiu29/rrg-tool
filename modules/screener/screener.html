@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Stock Screener — Market Intelligence Harness</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
 
@@ -221,6 +222,36 @@
 
   .footnote { font-size: 9.5px; color: var(--dim); margin-top: 10px; line-height: 1.6; }
   .muted { color: var(--dim); }
+
+  /* --- backtest sidecar + report modal --- */
+  .bt-controls { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; font-size: 10.5px; color: var(--dim); }
+  .bt-controls select, .bt-controls input { font-family: inherit; }
+  .bt-controls input[type=number] { width: 64px; }
+  .bt-controls input[type=date] { width: 120px; }
+
+  .modal { display: none; position: fixed; inset: 0; z-index: 50;
+           background: rgba(5,8,13,0.78); padding: 28px; overflow-y: auto; }
+  .modal.open { display: block; }
+  .modal-card { max-width: 1080px; margin: 0 auto; background: var(--panel);
+                border: 1px solid var(--grid); border-radius: 12px; padding: 22px 24px; }
+  .modal-card h2 { font-family: 'Bricolage Grotesque', sans-serif; font-size: 20px; font-weight: 800; }
+  .modal-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .modal-head .x { margin-left: auto; cursor: pointer; color: var(--dim); font-size: 18px; background: none; border: none; }
+  .modal-sub { font-size: 10.5px; color: var(--dim); margin-bottom: 16px; }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+               gap: 10px; margin: 14px 0; }
+  .stat { background: var(--bg); border: 1px solid var(--grid); border-radius: 8px; padding: 9px 11px; }
+  .stat .k { font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat .v { font-size: 17px; font-weight: 600; margin-top: 3px; }
+  .bt-section-title { font-size: 10px; color: var(--dim); text-transform: uppercase;
+                      letter-spacing: 0.08em; margin: 18px 0 8px; }
+  .bt-chart { width: 100%; height: 300px; }
+  .bt-hist { width: 100%; height: 190px; }
+  table.bt { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+  table.bt th, table.bt td { padding: 4px 8px; text-align: right; border-bottom: 1px solid var(--grid); }
+  table.bt th:first-child, table.bt td:first-child { text-align: left; }
+  .bt-trades { max-height: 260px; overflow-y: auto; }
 </style>
 </head>
 <body>
@@ -306,6 +337,48 @@
         <button class="btn small" id="btn-test-email">email</button>
       </div>
     </div>
+
+    <div class="panel">
+      <h3>Backtest <button class="btn primary small" id="btn-backtest" style="float:right; margin-top:-4px">Run ▸</button></h3>
+      <div class="footnote" style="margin-top:0; margin-bottom:10px">
+        Backtests the <em>current screen conditions</em> as an entry signal over history
+        (long-only, next-open fills). Uses the Universe toggle above — <em>All</em> is slow,
+        S&amp;P 500 recommended.
+      </div>
+      <div class="bt-controls">
+        <span class="ctl-label">Exit</span>
+        <select id="bt-model">
+          <option value="hold">Hold N days</option>
+          <option value="atr">ATR stop / target</option>
+          <option value="signal">Until signal gone</option>
+        </select>
+        <span id="bt-p-hold"><label>N <input type="number" id="bt-hold" value="10" min="1"></label></span>
+        <span id="bt-p-atr" style="display:none">
+          <label>stop× <input type="number" id="bt-stop" value="2" step="0.5" min="0.1"></label>
+          <label>tgt× <input type="number" id="bt-target" value="3" step="0.5" min="0.1"></label>
+        </span>
+        <label>max hold <input type="number" id="bt-maxhold" value="40" min="1"></label>
+      </div>
+      <div class="bt-controls" style="margin-top:8px">
+        <span class="ctl-label">Range</span>
+        <input type="date" id="bt-start" title="start (default 3y back)">
+        <input type="date" id="bt-end" title="end (default latest)">
+        <span class="muted" id="bt-info" style="font-size:10px"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="bt-modal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2>Backtest Report</h2>
+      <button class="btn small" id="bt-copy">Copy MD</button>
+      <button class="btn small" id="bt-download">Download .md</button>
+      <button class="x" id="bt-close" title="close">✕</button>
+    </div>
+    <div class="modal-sub" id="bt-config"></div>
+    <div id="bt-body"></div>
   </div>
 </div>
 
@@ -763,6 +836,196 @@ async function testChannel(ch, btn) {
   setTimeout(() => { btn.textContent = ch; btn.disabled = false; }, 2500);
 }
 
+// --- backtest ---------------------------------------------------------------
+
+let lastReport = null;
+
+function btExitCfg() {
+  const model = $('bt-model').value;
+  return {
+    model,
+    hold_days: parseInt($('bt-hold').value, 10) || 10,
+    atr_stop: parseFloat($('bt-stop').value) || 2,
+    atr_target: parseFloat($('bt-target').value) || 3,
+    max_hold: parseInt($('bt-maxhold').value, 10) || 40,
+  };
+}
+
+function btSyncParams() {
+  const m = $('bt-model').value;
+  $('bt-p-hold').style.display = m === 'hold' ? '' : 'none';
+  $('bt-p-atr').style.display = m === 'atr' ? '' : 'none';
+}
+
+async function runBacktest() {
+  const conds = readConditions();
+  if (!conds.length) { $('bt-info').textContent = 'add at least one condition first'; return; }
+  const btn = $('btn-backtest');
+  btn.disabled = true; btn.textContent = 'running…';
+  $('bt-info').textContent = 'crunching history…';
+  const body = {
+    conditions: conds, universe,
+    exit: btExitCfg(),
+    start: $('bt-start').value || null,
+    end: $('bt-end').value || null,
+  };
+  try {
+    const r = await fetch('/api/screener/backtest', { method: 'POST', body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'backtest failed');
+    lastReport = d;
+    $('bt-info').textContent = `${d.n_trades_total} trades`;
+    openBacktest(d);
+  } catch (e) {
+    $('bt-info').textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Run ▸';
+  }
+}
+
+function statCard(k, v) { return `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`; }
+function pct1(v) { return v == null ? '—' : (v > 0 ? '+' : '') + num(v, 1) + '%'; }
+function plain(v, d = 2) { return v == null ? '—' : num(v, d); }
+
+function openBacktest(d) {
+  const c = d.config, s = d.stats, eq = d.equity || {};
+  $('bt-modal').classList.add('open');
+  $('bt-config').textContent =
+    `${c.universe} · ${c.start} → ${c.end} · ${c.n_symbols} symbols · exit: ${c.exit.model}` +
+    (c.exit.model === 'hold' ? ` ${c.exit.hold_days}d` :
+     c.exit.model === 'atr' ? ` ${c.exit.atr_stop}×/${c.exit.atr_target}× ATR` : '') +
+    ` · ${d.n_trades_total} trades`;
+
+  if (!s.n_trades) {
+    $('bt-body').innerHTML = `<p class="muted" style="padding:30px 0">No trades — the signal
+      never fired in this window (or only on the final bar).</p>`;
+    return;
+  }
+
+  const grid = [
+    statCard('Trades', s.n_trades),
+    statCard('Win rate', pct1(s.win_rate)),
+    statCard('Avg return', pct1(s.avg_return)),
+    statCard('Expectancy', pct1(s.expectancy)),
+    statCard('Profit factor', plain(s.profit_factor)),
+    statCard('Payoff ratio', plain(s.payoff_ratio)),
+    statCard('Avg win', pct1(s.avg_win)),
+    statCard('Avg loss', pct1(s.avg_loss)),
+    statCard('Avg bars held', plain(s.avg_bars_held, 1)),
+    statCard('Best / Worst', `${pct1(s.best)} / ${pct1(s.worst)}`),
+  ];
+  if (eq.total_return != null) grid.push(
+    statCard('Strategy return', pct1(eq.total_return)),
+    statCard('SPY return', pct1(eq.bench_total_return)),
+    statCard('CAGR', pct1(eq.cagr)),
+    statCard('Max drawdown', pct1(eq.max_drawdown)),
+    statCard('Sharpe', plain(eq.sharpe, 2)));
+
+  let fwd = '<div class="bt-section-title">Forward returns from entry (close-to-close)</div>' +
+    '<table class="bt"><tr><th>Horizon</th><th>Mean</th><th>Median</th><th>Win %</th><th>Excess vs SPY</th><th>N</th></tr>';
+  for (const h of [1, 5, 10, 20]) {
+    const f = d.forward[String(h)];
+    if (!f) continue;
+    fwd += `<tr><td>+${h}d</td><td>${pct1(f.mean)}</td><td>${pct1(f.median)}</td>` +
+           `<td>${plain(f.win_rate, 0)}%</td><td>${pct1(f.excess_vs_spy)}</td><td>${f.n}</td></tr>`;
+  }
+  fwd += '</table>';
+
+  const byExit = Object.entries(s.by_exit || {}).map(([k, v]) => `${k}: ${v}`).join(' · ');
+
+  let trades = '<div class="bt-section-title">Trades (first ' + d.trades.length + ')</div>' +
+    '<div class="bt-trades"><table class="bt"><tr><th>Symbol</th><th>Entry</th><th>Exit</th>' +
+    '<th>Ret %</th><th>Bars</th><th>MFE</th><th>MAE</th><th>Exit</th></tr>';
+  for (const t of d.trades) {
+    const cls = t.return_pct > 0 ? 'pos' : t.return_pct < 0 ? 'neg' : '';
+    trades += `<tr><td>${esc(t.symbol)}</td><td>${t.entry_date}</td><td>${t.exit_date}</td>` +
+      `<td class="${cls}">${pct1(t.return_pct)}</td><td>${t.bars_held}</td>` +
+      `<td>${pct1(t.mfe_pct)}</td><td>${pct1(t.mae_pct)}</td><td>${esc(t.exit_reason)}</td></tr>`;
+  }
+  trades += '</table></div>';
+
+  const caveats = '<div class="footnote">⚠️ ' + d.caveats.map(esc).join('<br>⚠️ ') + '</div>';
+
+  $('bt-body').innerHTML =
+    `<div class="stat-grid">${grid.join('')}</div>` +
+    (eq.dates ? '<div class="bt-section-title">Equity curve — strategy vs SPY</div><div id="bt-equity" class="bt-chart"></div>' : '') +
+    fwd +
+    `<div class="footnote" style="margin-top:6px">Exit breakdown — ${byExit}</div>` +
+    '<div class="bt-section-title">Trade return distribution</div><div id="bt-hist" class="bt-hist"></div>' +
+    trades + caveats;
+
+  drawBacktestCharts(d);
+}
+
+function drawBacktestCharts(d) {
+  const dark = {
+    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: '#0f1521',
+    font: { family: 'Spline Sans Mono, monospace', size: 10, color: '#8b94a3' },
+    margin: { l: 48, r: 16, t: 8, b: 28 }, showlegend: true,
+    legend: { orientation: 'h', y: 1.12, font: { size: 9 } },
+    xaxis: { gridcolor: '#1c2533' }, yaxis: { gridcolor: '#1c2533' },
+  };
+  const cfg = { displaylogo: false, responsive: true, displayModeBar: false };
+  if (d.equity && d.equity.dates) {
+    Plotly.newPlot('bt-equity', [
+      { x: d.equity.dates, y: d.equity.strategy, name: 'Strategy', mode: 'lines',
+        line: { color: '#ffb000', width: 1.6 } },
+      { x: d.equity.dates, y: d.equity.benchmark, name: 'SPY', mode: 'lines',
+        line: { color: '#5b8dd9', width: 1.2 } },
+    ], { ...dark }, cfg);
+  }
+  if (d.histogram) {
+    const h = d.histogram, centers = [];
+    for (let i = 0; i < h.counts.length; i++) centers.push((h.edges[i] + h.edges[i + 1]) / 2);
+    const colors = centers.map(c => c >= 0 ? '#2fbf8f' : '#e4596b');
+    Plotly.newPlot('bt-hist', [
+      { x: centers, y: h.counts, type: 'bar', marker: { color: colors } },
+    ], { ...dark, showlegend: false, xaxis: { ...dark.xaxis, title: { text: 'trade return %', font: { size: 9 } } } }, cfg);
+  }
+}
+
+function backtestMarkdown(d) {
+  const c = d.config, s = d.stats, eq = d.equity || {};
+  const L = [];
+  L.push(`# Backtest Report`);
+  L.push('');
+  L.push(`**Universe:** ${c.universe} · **Period:** ${c.start} → ${c.end} · **Symbols:** ${c.n_symbols}`);
+  L.push(`**Exit model:** ${c.exit.model}` +
+    (c.exit.model === 'hold' ? ` (${c.exit.hold_days} days)` :
+     c.exit.model === 'atr' ? ` (${c.exit.atr_stop}× stop / ${c.exit.atr_target}× target, max ${c.exit.max_hold})` :
+     ` (max ${c.exit.max_hold})`));
+  L.push('');
+  L.push(`**Entry conditions:**`);
+  for (const cond of c.conditions) L.push(`- \`${cond.field} ${cond.op} ${JSON.stringify(cond.value)}\``);
+  L.push('');
+  if (!s.n_trades) { L.push('_No trades — signal never fired in this window._'); return L.join('\n'); }
+  L.push(`## Trade statistics`);
+  L.push('| Metric | Value |');
+  L.push('| --- | --- |');
+  const rows = [
+    ['Trades', s.n_trades], ['Win rate', pct1(s.win_rate)], ['Avg return', pct1(s.avg_return)],
+    ['Expectancy', pct1(s.expectancy)], ['Profit factor', plain(s.profit_factor)],
+    ['Payoff ratio', plain(s.payoff_ratio)], ['Avg win', pct1(s.avg_win)], ['Avg loss', pct1(s.avg_loss)],
+    ['Avg bars held', plain(s.avg_bars_held, 1)], ['Best', pct1(s.best)], ['Worst', pct1(s.worst)],
+  ];
+  if (eq.total_return != null) rows.push(
+    ['Strategy total return', pct1(eq.total_return)], ['SPY total return', pct1(eq.bench_total_return)],
+    ['CAGR', pct1(eq.cagr)], ['Max drawdown', pct1(eq.max_drawdown)], ['Sharpe', plain(eq.sharpe, 2)]);
+  for (const [k, v] of rows) L.push(`| ${k} | ${v} |`);
+  L.push('');
+  L.push(`## Forward returns from entry`);
+  L.push('| Horizon | Mean | Median | Win % | Excess vs SPY | N |');
+  L.push('| --- | --- | --- | --- | --- | --- |');
+  for (const h of [1, 5, 10, 20]) {
+    const f = d.forward[String(h)];
+    if (!f) continue;
+    L.push(`| +${h}d | ${pct1(f.mean)} | ${pct1(f.median)} | ${plain(f.win_rate, 0)}% | ${pct1(f.excess_vs_spy)} | ${f.n} |`);
+  }
+  L.push('');
+  L.push('_' + d.caveats.join(' ') + '_');
+  return L.join('\n');
+}
+
 // --- boot -------------------------------------------------------------------
 
 async function boot() {
@@ -804,6 +1067,25 @@ async function boot() {
   $('btn-test-discord').onclick = e => testChannel('discord', e.target);
   $('btn-test-email').onclick = e => testChannel('email', e.target);
   $('risk-input').onchange = () => renderRows(lastRows);
+
+  $('bt-model').onchange = btSyncParams; btSyncParams();
+  $('btn-backtest').onclick = runBacktest;
+  $('bt-close').onclick = () => $('bt-modal').classList.remove('open');
+  $('bt-modal').onclick = e => { if (e.target === $('bt-modal')) $('bt-modal').classList.remove('open'); };
+  $('bt-copy').onclick = async () => {
+    if (!lastReport) return;
+    await navigator.clipboard.writeText(backtestMarkdown(lastReport));
+    $('bt-copy').textContent = 'copied ✓';
+    setTimeout(() => $('bt-copy').textContent = 'Copy MD', 1800);
+  };
+  $('bt-download').onclick = () => {
+    if (!lastReport) return;
+    const blob = new Blob([backtestMarkdown(lastReport)], { type: 'text/markdown' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `backtest-${lastReport.config.universe}-${lastReport.config.end}.md`;
+    a.click(); URL.revokeObjectURL(a.href);
+  };
 
   loadStatus(); loadWatchlists(); loadAlerts();
   pollProgress();          // attach to a refresh already in flight

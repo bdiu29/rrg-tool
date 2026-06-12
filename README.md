@@ -16,9 +16,9 @@ Each module has its own README with the full nuts-and-bolts deep dive.
 |---|---|---|
 | **Home** | Hub page linking every module, with live status badges | [modules/home](modules/home/README.md) |
 | **RRG** | Interactive Relative Rotation Graph for sector ETFs — rotation calls per sector | [modules/rrg](modules/rrg/README.md) |
-| **Breadth** | Market breadth tracker: McClellan, A-D lines, % above MAs, regime & divergences across swappable universes (S&P 500 / NYSE / Nasdaq) | [modules/breadth](modules/breadth/README.md) |
+| **Breadth** | Market breadth tracker: McClellan, A-D lines, % above MAs / short-term EMA thrust, regime & divergences across swappable universes (S&P 500 / NYSE / Nasdaq) | [modules/breadth](modules/breadth/README.md) |
 | **Schwab** | Account positions enriched with daily sector rotation signals (BUY / HOLD / SELL) | [modules/schwab](modules/schwab/README.md) |
-| **Screener** | TradingView-style screener over the whole market + watchlists + intraday pump/dump alerts (Discord / email) | [modules/screener](modules/screener/README.md) |
+| **Screener** | TradingView-style screener over the whole market (incl. EMA & golden-pocket filters) + watchlists + intraday pump/dump alerts (Discord / email) + a **strategy backtester** | [modules/screener](modules/screener/README.md) |
 
 ### RRG — direction of travel, not just position
 
@@ -30,10 +30,18 @@ The [RRG module](modules/rrg/README.md) plots each sector's relative strength vs
 
 ### Screener — scan, watch, get alerted
 
-The [Screener module](modules/screener/README.md) filters ~5,300 symbols with savable screens, builds watchlists, and raises same-day pump/dump alerts on your positions and watchlist names — in-app and optionally to Discord/email.
+The [Screener module](modules/screener/README.md) filters ~5,300 symbols with savable screens, builds watchlists, and raises same-day pump/dump alerts on your positions and watchlist names — in-app and optionally to Discord/email. Filters include price-vs-EMA distances (5/10/20/50/100/200) and a **golden-pocket** scanner (price in / approaching the 0.618–0.786 Fibonacci retracement of the latest swing, both directions).
 
 <p align="center">
   <img src="assets/screener.png" alt="Stock screener — filter builder, results table, watchlists, and alerts" width="900"/>
+</p>
+
+### Backtester — validate a confluence before you trade it
+
+The screener doubles as a **strategy backtester**: take your current screen conditions as an entry signal and replay them over history (long-only, next-open fills, no lookahead). It reports win rate, expectancy, profit factor, forward returns at +1/5/10/20 days vs SPY, and an equity curve — exportable to Markdown. Built so a machine-learning ranking layer can train on the per-trade signal features later.
+
+<p align="center">
+  <img src="assets/backtest.png" alt="Backtest report — stat grid, equity curve vs SPY, and forward-return study" width="900"/>
 </p>
 
 ---

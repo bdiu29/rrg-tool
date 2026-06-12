@@ -14,6 +14,7 @@ Routes registered:
   GET  /api/screener/progress         → refresh job status
   GET  /api/screener/fields           → filter field registry + ops
   POST /api/screener/scan             → run a screen {conditions|screen_id, universe, ...}
+  POST /api/screener/backtest         → backtest a confluence {conditions|screen_id, universe, start, end, exit}
   GET  /api/screener/screens          → saved screens
   POST /api/screener/screens/save     → create/update {id?, name, universe, conditions, armed?}
   POST /api/screener/screens/delete   → {id}
@@ -36,7 +37,7 @@ from modules import Response
 from modules.breadth import store as breadth_store
 from modules.breadth import universes as breadth_universes
 
-from . import filters, notify, poller, snapshot, store
+from . import backtest, filters, notify, poller, snapshot, store
 
 _MODULE_DIR = Path(__file__).resolve().parent
 
@@ -56,6 +57,9 @@ SCAN_COLUMNS = [
     "pct_from_52w_high", "pct_from_52w_low",
     "price_vs_sma20_pct", "price_vs_sma50_pct",
     "price_vs_sma150_pct", "price_vs_sma200_pct",
+    "price_vs_ema10_pct", "price_vs_ema20_pct", "price_vs_ema50_pct",
+    "gp_direction", "gp_retrace", "gp_in_pocket", "gp_approaching",
+    "gp_zone_low", "gp_zone_high",
     "market_cap", "pe_ratio", "div_yield", "beta",
     "days_to_earnings", "earnings_date", "sector", "sector_etf", "rrg_call",
 ]
@@ -190,6 +194,45 @@ def _handle_scan(req):
         "stale":         snapshot.needs_refresh(),
         "note":          SURVIVORSHIP_NOTE,
     })
+
+
+# ---------------------------------------------------------------------------
+# Backtest
+# ---------------------------------------------------------------------------
+
+def _handle_backtest(req):
+    body = req.json_body() or {}
+
+    if body.get("screen_id") is not None:
+        screen = store.get_screen(body["screen_id"])
+        if screen is None:
+            return Response.error("unknown screen id", 404)
+        conditions = screen["conditions"]
+        universe   = body.get("universe") or screen["universe"]
+    else:
+        conditions = body.get("conditions", [])
+        universe   = body.get("universe", backtest.DEFAULT_UNIVERSE)
+
+    if not conditions:
+        return Response.error("a backtest needs at least one condition", 400)
+    errors = filters.validate_conditions(conditions)
+    if errors:
+        return Response.error("; ".join(errors), 400)
+    if universe == "all":
+        pass
+    elif universe not in _universe_keys():
+        return Response.error(f"unknown universe '{universe}'", 400)
+
+    try:
+        report = backtest.run_backtest(
+            conditions, universe=universe,
+            start=body.get("start"), end=body.get("end"),
+            exit_cfg=body.get("exit"))
+    except Exception as e:
+        return Response.error(f"backtest failed: {e}", 500)
+    if report.get("error"):
+        return Response.error(report["error"], 400)
+    return Response.json(report)
 
 
 # ---------------------------------------------------------------------------
@@ -332,6 +375,7 @@ def register_routes(router):
     router.get("/api/screener/progress",         _handle_progress)
     router.get("/api/screener/fields",           _handle_fields)
     router.post("/api/screener/scan",            _handle_scan)
+    router.post("/api/screener/backtest",        _handle_backtest)
     router.get("/api/screener/screens",          _handle_screens)
     router.post("/api/screener/screens/save",    _handle_screen_save)
     router.post("/api/screener/screens/delete",  _handle_screen_delete)

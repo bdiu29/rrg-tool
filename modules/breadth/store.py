@@ -53,6 +53,8 @@ CREATE TABLE IF NOT EXISTS breadth_daily (
     up_vol        REAL, down_vol REAL,
     new_highs     INTEGER, new_lows INTEGER,
     pct_above_20  REAL, pct_above_50 REAL, pct_above_200 REAL,
+    n_above_5ema  INTEGER, n_above_10ema INTEGER, n_above_20ema INTEGER,
+    pct_above_5ema REAL, pct_above_10ema REAL, pct_above_20ema REAL,
     n_symbols     INTEGER,
     PRIMARY KEY (universe, date)
 );
@@ -84,9 +86,21 @@ def connect():
     return conn
 
 
+_BREADTH_DAILY_ADDED = [
+    "n_above_5ema INTEGER", "n_above_10ema INTEGER", "n_above_20ema INTEGER",
+    "pct_above_5ema REAL", "pct_above_10ema REAL", "pct_above_20ema REAL",
+]
+
+
 def init_db():
     with connect() as conn:
         conn.executescript(_SCHEMA)
+        # Add EMA-count columns to a pre-existing breadth_daily; they backfill
+        # on the next sync (the aggregate recompute is cheap — no re-download).
+        have = {r[1] for r in conn.execute("PRAGMA table_info(breadth_daily)")}
+        for col in _BREADTH_DAILY_ADDED:
+            if col.split()[0] not in have:
+                conn.execute(f"ALTER TABLE breadth_daily ADD COLUMN {col}")
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +280,8 @@ def replace_breadth_daily(universe, df):
     """df: date-indexed with breadth_daily's value columns."""
     cols = ["advances", "declines", "unchanged", "up_vol", "down_vol",
             "new_highs", "new_lows", "pct_above_20", "pct_above_50",
-            "pct_above_200", "n_symbols"]
+            "pct_above_200", "n_above_5ema", "n_above_10ema", "n_above_20ema",
+            "pct_above_5ema", "pct_above_10ema", "pct_above_20ema", "n_symbols"]
     rows = [
         tuple([universe, d] + [None if pd.isna(v) else float(v) for v in r])
         for d, r in zip(df.index, df[cols].to_numpy())

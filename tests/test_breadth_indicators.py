@@ -63,6 +63,18 @@ class TestDailyAggregates(unittest.TestCase):
         self.assertTrue(np.isnan(agg["pct_above_20"].iloc[0]))   # no 20d history yet
         self.assertAlmostEqual(agg["pct_above_20"].iloc[-1], 100.0)
 
+    def test_ema_counts_and_eligibility(self):
+        # 25 rising days: a rising series sits above its EMA once the EMA exists.
+        idx   = _dates(25)
+        close = pd.DataFrame({"A": np.linspace(10, 20, 25),
+                              "B": np.linspace(30, 40, 25)}, index=idx)
+        vol   = close * 0 + 100
+        agg   = ind.daily_aggregates(close, vol)
+        self.assertEqual(agg["n_above_5ema"].iloc[-1], 2)          # both names above
+        self.assertAlmostEqual(agg["pct_above_5ema"].iloc[-1], 100.0)
+        # 20-EMA needs 20 bars of history → first row has no eligible names
+        self.assertTrue(np.isnan(agg["pct_above_20ema"].iloc[0]))
+
     def test_new_highs_need_full_window(self):
         idx   = _dates(ind.NH_NL_WINDOW + 5)
         close = pd.DataFrame({"A": np.linspace(10, 20, len(idx))}, index=idx)

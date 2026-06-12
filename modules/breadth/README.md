@@ -36,9 +36,10 @@ The `interpret()` step maps a short-term extreme *through* the regime — an ove
 2. **Cumulative A-D line** + A-D volume line
 3. **McClellan Oscillator** (ratio-adjusted) + Summation Index
 4. **% of stocks above 20/50/200-day MA**
-5. **TRIN (Arms Index)** + up/down volume ratio
-6. **52-week new highs − new lows** + High-Low Index
-7. **Concentration gauge** — RSP/SPY ratio (equal-weight vs cap-weight; falling = top-heavy market)
+5. **% of stocks above 5/10/20-day EMA** — short-term thrust that leads the slower SMA panel
+6. **TRIN (Arms Index)** + up/down volume ratio
+7. **52-week new highs − new lows** + High-Low Index
+8. **Concentration gauge** — RSP/SPY ratio (equal-weight vs cap-weight; falling = top-heavy market)
 
 ---
 
@@ -61,6 +62,7 @@ Swappable at runtime via the buttons in the header: **S&P 500** (Wikipedia const
 - **McClellan is ratio-adjusted** (`rana = 1000·(adv−dec)/(adv+dec)`, osc = EMA19−EMA39) so readings are comparable across a 500-stock and a 3,000-stock universe — a deliberate deviation from the classic raw-net-advances form, because universes are runtime-swappable and the regime thresholds must be scale-independent.
 - **Summation Index uses the closed form `19·EMA39 − 9·EMA19`, not `cumsum(osc)`.** A plain cumsum carries a permanent artifact from the arbitrary first day of stored history (found live: a positive-breadth market reading deeply negative). The closed form's increment still equals the oscillator exactly.
 - **% above MA / new highs-lows** use per-day *eligible counts* as denominators (a symbol needs 200 bars before it counts for % above 200d) — keeps young listings from distorting the percentages.
+- **Short-term EMA thrust** — count and % of names above their 5/10/20-day EMA (`n_above_{5,10,20}ema` / `pct_above_{5,10,20}ema`), same eligible-denominator discipline as the SMA block. These backfill on the next sync's recompute from stored bars (no re-download).
 - The Bullish Percent Index is stubbed — it needs a point-&-figure signal engine.
 
 ---

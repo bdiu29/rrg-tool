@@ -18,6 +18,7 @@ EMA_FAST = 19
 EMA_SLOW = 39
 
 MA_WINDOWS      = (20, 50, 200)   # for % of stocks above N-day SMA
+EMA_WINDOWS     = (5, 10, 20)     # for count/% of stocks above N-day EMA (short-term thrust)
 NH_NL_WINDOW    = 252             # 52-week new highs / new lows
 HL_INDEX_SMOOTH = 10              # High-Low Index = 10-day SMA of NH/(NH+NL)
 
@@ -66,6 +67,16 @@ def daily_aggregates(close, volume):
         above    = (close > sma) & eligible
         denom    = eligible.sum(axis=1).replace(0, np.nan)
         out[f"pct_above_{w}"] = 100.0 * above.sum(axis=1) / denom
+
+    # Short-term EMA thrust: count and % of names above their 5/10/20-day EMA.
+    # Same eligible-denominator discipline as the SMA block above.
+    for w in EMA_WINDOWS:
+        ema      = close.ewm(span=w, adjust=False, min_periods=w).mean()
+        eligible = ema.notna() & close.notna()
+        above    = (close > ema) & eligible
+        denom    = eligible.sum(axis=1).replace(0, np.nan)
+        out[f"n_above_{w}ema"]   = above.sum(axis=1)
+        out[f"pct_above_{w}ema"] = 100.0 * above.sum(axis=1) / denom
 
     roll_max = close.rolling(NH_NL_WINDOW, min_periods=NH_NL_WINDOW).max()
     roll_min = close.rolling(NH_NL_WINDOW, min_periods=NH_NL_WINDOW).min()

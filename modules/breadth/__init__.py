@@ -127,7 +127,9 @@ def build_dashboard(universe_key, days=DEFAULT_DAYS):
                "net_up_vol", "ud_vol_ratio", "nh_nl", "hl_index")}
     series.update({k: _clean(a[k]) for k in
                    ("advances", "declines", "pct_above_20", "pct_above_50",
-                    "pct_above_200", "new_highs", "new_lows", "n_symbols")})
+                    "pct_above_200", "pct_above_5ema", "pct_above_10ema",
+                    "pct_above_20ema", "n_above_5ema", "n_above_10ema",
+                    "n_above_20ema", "new_highs", "new_lows", "n_symbols")})
 
     return {
         "universe":          universe_key,

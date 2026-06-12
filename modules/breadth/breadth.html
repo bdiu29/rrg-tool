@@ -442,6 +442,7 @@ const PANELS = [
   { weight: 1.1, title: 'CUMULATIVE A-D LINE · A-D VOLUME LINE →' },
   { weight: 1.1, title: 'McCLELLAN OSC (ratio-adj) · SUMMATION →' },
   { weight: 1.1, title: '% ABOVE 20d / 50d / 200d MA' },
+  { weight: 1.0, title: '% ABOVE 5 / 10 / 20-DAY EMA (short-term thrust)' },
   { weight: 1.0, title: 'TRIN · UP/DOWN VOLUME RATIO →' },
   { weight: 1.0, title: '52-WK NEW HIGHS − NEW LOWS · HIGH-LOW INDEX →' },
   { weight: 0.8, title: 'CONCENTRATION' },
@@ -467,7 +468,7 @@ function renderChart() {
   const line = (color, w=1.3) => ({color, width: w});
 
   // axis ids per panel: [primary, secondary?]
-  // p0:y1  p1:y2/y3  p2:y4/y5  p3:y6  p4:y7/y8  p5:y9/y10  p6:y11
+  // p0:y1  p1:y2/y3  p2:y4/y5  p3:y6  p4:y12  p5:y7/y8  p6:y9/y10  p7:y11
   const traces = [
     { x: dates, y: dash.index.close, yaxis: 'y1', name: dash.index.symbol,
       mode: 'lines', line: line(C.accent, 1.6) },
@@ -482,6 +483,10 @@ function renderChart() {
     { x: dates, y: s.pct_above_50,  yaxis: 'y6', name: '>50d',  mode: 'lines', line: line(C.accent, 1.1) },
     { x: dates, y: s.pct_above_200, yaxis: 'y6', name: '>200d', mode: 'lines', line: line(C.green, 1.4) },
 
+    { x: dates, y: s.pct_above_5ema,  yaxis: 'y12', name: '>5 EMA',  mode: 'lines', line: line(C.blue, 1) },
+    { x: dates, y: s.pct_above_10ema, yaxis: 'y12', name: '>10 EMA', mode: 'lines', line: line(C.accent, 1.1) },
+    { x: dates, y: s.pct_above_20ema, yaxis: 'y12', name: '>20 EMA', mode: 'lines', line: line(C.green, 1.4) },
+
     { x: dates, y: s.trin,         yaxis: 'y7', name: 'TRIN',    mode: 'lines', line: line(C.red, 1) },
     { x: dates, y: s.ud_vol_ratio, yaxis: 'y8', name: 'U/D vol', mode: 'lines', line: line(C.teal, 1) },
 
@@ -492,7 +497,7 @@ function renderChart() {
   if (dash.concentration && dash.concentration.ratio) {
     traces.push({ x: dates, y: dash.concentration.ratio, yaxis: 'y11',
                   name: dash.concentration.label, mode: 'lines', line: line(C.purple, 1.2) });
-    PANELS[6].title = `CONCENTRATION — ${dash.concentration.label} (rising = broad, falling = top-heavy)`;
+    PANELS[7].title = `CONCENTRATION — ${dash.concentration.label} (rising = broad, falling = top-heavy)`;
   }
   PANELS[0].title = `${dash.index.symbol} · divergence flags`;
 
@@ -523,7 +528,7 @@ function renderChart() {
     plot_bgcolor: '#0f1521',
     font: {family: 'Spline Sans Mono, monospace', size: 10, color: C.dim},
     margin: {l: 58, r: 58, t: 16, b: 30},
-    height: 1180,
+    height: 1320,
     showlegend: false,
     hovermode: 'x',
     bargap: 0,
@@ -540,13 +545,14 @@ function renderChart() {
     yaxis4:  {...axisBase, domain: dom[2], zerolinecolor: 'rgba(196,206,222,0.3)'},
     yaxis5:  {...axisBase, overlaying: 'y4', side: 'right', showgrid: false},
     yaxis6:  {...axisBase, domain: dom[3], range: [0, 100]},
-    yaxis7:  {...axisBase, domain: dom[4], range: [0, 3]},
+    yaxis12: {...axisBase, domain: dom[4], range: [0, 100]},
+    yaxis7:  {...axisBase, domain: dom[5], range: [0, 3]},
     yaxis8:  {...axisBase, overlaying: 'y7', side: 'right', showgrid: false},
-    yaxis9:  {...axisBase, domain: dom[5]},
+    yaxis9:  {...axisBase, domain: dom[6]},
     yaxis10: {...axisBase, overlaying: 'y9', side: 'right', showgrid: false, range: [0, 100]},
-    yaxis11: {...axisBase, domain: dom[6]},
+    yaxis11: {...axisBase, domain: dom[7]},
     shapes: [
-      hline(50, 'y6'), hline(1.0, 'y7'), hline(0, 'y9'),
+      hline(50, 'y6'), hline(50, 'y12'), hline(1.0, 'y7'), hline(0, 'y9'),
     ],
     annotations: PANELS.map((p, i) => ({
       text: p.title, xref: 'paper', yref: 'paper',

@@ -28,10 +28,13 @@ CREATE TABLE IF NOT EXISTS snapshot (
     chg_pct REAL, gap_pct REAL, vol_chg_pct REAL,
     avg_vol_10d REAL, rvol_10d REAL,
     sma20 REAL, sma50 REAL, sma150 REAL, sma200 REAL,
+    ema5 REAL, ema10 REAL, ema20 REAL, ema50 REAL, ema100 REAL, ema200 REAL,
     rsi14 REAL, atr14 REAL, atr_pct REAL,
     rs_1m_pct REAL, rs_3m_pct REAL,
     high_20d REAL, low_20d REAL, high_252 REAL, low_252 REAL,
-    pct_from_52w_high REAL, pct_from_52w_low REAL
+    pct_from_52w_high REAL, pct_from_52w_low REAL,
+    gp_direction TEXT, gp_retrace REAL, gp_in_pocket REAL, gp_approaching REAL,
+    gp_zone_low REAL, gp_zone_high REAL
 );
 
 -- Schwab instruments fills the numeric columns; yfinance fills the gaps plus
@@ -128,6 +131,24 @@ BUILTIN_SCREENS = [
             {"field": "price_vs_sma150_pct",  "op": ">",       "value": 0},
         ],
     },
+    {
+        "name": "Golden Pocket",
+        "universe": "all",
+        "conditions": [
+            {"field": "gp_in_pocket", "op": "==", "value": 1},
+            {"field": "gp_direction", "op": "==", "value": "bullish"},
+            {"field": "volume",       "op": ">",  "value": 100000},
+        ],
+    },
+    {
+        "name": "Approaching Golden Pocket",
+        "universe": "all",
+        "conditions": [
+            {"field": "gp_approaching", "op": "==", "value": 1},
+            {"field": "gp_direction",   "op": "==", "value": "bullish"},
+            {"field": "volume",         "op": ">",  "value": 100000},
+        ],
+    },
 ]
 
 
@@ -142,7 +163,20 @@ def connect():
 def init_db():
     with connect() as conn:
         conn.executescript(_SCHEMA)
+        _migrate_snapshot(conn)
     prune_alerts()
+
+
+def _migrate_snapshot(conn):
+    """The snapshot is fully derived and rebuilt in seconds, so the simplest
+    forward-migration is to drop & recreate it whenever the column set is out
+    of date (e.g. EMA / golden-pocket columns added). No data loss — the next
+    refresh repopulates it."""
+    have = {r[1] for r in conn.execute("PRAGMA table_info(snapshot)")}
+    needed = set(SNAPSHOT_COLS) - {"symbol"}
+    if have and not needed.issubset(have):
+        conn.execute("DROP TABLE snapshot")
+        conn.executescript(_SCHEMA)
 
 
 def _now():
@@ -189,10 +223,13 @@ SNAPSHOT_COLS = [
     "chg_pct", "gap_pct", "vol_chg_pct",
     "avg_vol_10d", "rvol_10d",
     "sma20", "sma50", "sma150", "sma200",
+    "ema5", "ema10", "ema20", "ema50", "ema100", "ema200",
     "rsi14", "atr14", "atr_pct",
     "rs_1m_pct", "rs_3m_pct",
     "high_20d", "low_20d", "high_252", "low_252",
     "pct_from_52w_high", "pct_from_52w_low",
+    "gp_direction", "gp_retrace", "gp_in_pocket", "gp_approaching",
+    "gp_zone_low", "gp_zone_high",
 ]
 
 

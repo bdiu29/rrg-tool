@@ -156,7 +156,9 @@ class TestStoreAlertsAndRouting(unittest.TestCase):
         store.seed_builtin_screens()
         store.seed_builtin_screens()
         names = [s["name"] for s in store.list_screens()]
-        self.assertEqual(sorted(names), ["Breakout", "Continuation"])
+        self.assertEqual(sorted(names),
+                         ["Approaching Golden Pocket", "Breakout",
+                          "Continuation", "Golden Pocket"])
 
     def test_screen_match_memory(self):
         store.update_screen_matches(1, {"AAA", "BBB"}, "2026-06-11")

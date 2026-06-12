@@ -23,6 +23,9 @@ def _frame():
         "market_cap":  [5e8, 5e6, 2e10, np.nan],
         "sma50":       [9.0, 55.0, 90.0, 210.0],
         "sma150":      [8.0, 60.0, 80.0, 220.0],
+        "ema20":       [9.5, 52.0, 95.0, 205.0],
+        "gp_in_pocket": [1.0, 0.0, 1.0, np.nan],
+        "gp_direction": ["bullish", "bearish", "bullish", None],
         "sector_etf":  ["XLK", "XLE", None, "XLK"],
         "earnings_date": [None, "2026-06-15", "2026-07-30", None],
     }, index=["UP", "DOWN", "BIG", "GAPPY"])
@@ -81,6 +84,30 @@ class TestDerivedColumns(unittest.TestCase):
         df = filters.derive_scan_columns(_frame(), today="2026-06-11")
         self.assertEqual(df.loc["DOWN", "days_to_earnings"], 4)
         self.assertTrue(np.isnan(df.loc["UP", "days_to_earnings"]))
+
+    def test_price_vs_ema(self):
+        df = filters.derive_scan_columns(_frame())
+        # UP: close 10 vs ema20 9.5 → +5.26%
+        self.assertAlmostEqual(df.loc["UP", "price_vs_ema20_pct"],
+                               (10 / 9.5 - 1) * 100, places=4)
+        self.assertLess(df.loc["DOWN", "price_vs_ema20_pct"], 0)
+
+
+class TestGoldenPocketFilter(unittest.TestCase):
+    def test_in_pocket_and_direction(self):
+        df = filters.derive_scan_columns(_frame())
+        got = set(filters.apply_filters(df, [
+            {"field": "gp_in_pocket", "op": "==", "value": 1},
+            {"field": "gp_direction", "op": "==", "value": "bullish"},
+        ]).index)
+        self.assertEqual(got, {"UP", "BIG"})
+
+    def test_nan_pocket_never_matches(self):
+        df = filters.derive_scan_columns(_frame())
+        # GAPPY has NaN gp_in_pocket — must not pass an == filter
+        got = set(filters.apply_filters(
+            df, [{"field": "gp_in_pocket", "op": "==", "value": 1}]).index)
+        self.assertNotIn("GAPPY", got)
 
 
 class TestValidation(unittest.TestCase):

@@ -32,6 +32,16 @@ FIELDS = {
     "price_vs_sma50_pct": {"label": "Price vs SMA50 %",  "kind": "num"},
     "price_vs_sma150_pct": {"label": "Price vs SMA150 %", "kind": "num"},
     "price_vs_sma200_pct": {"label": "Price vs SMA200 %", "kind": "num"},
+    "price_vs_ema5_pct":  {"label": "Price vs EMA5 %",   "kind": "num"},
+    "price_vs_ema10_pct": {"label": "Price vs EMA10 %",  "kind": "num"},
+    "price_vs_ema20_pct": {"label": "Price vs EMA20 %",  "kind": "num"},
+    "price_vs_ema50_pct": {"label": "Price vs EMA50 %",  "kind": "num"},
+    "price_vs_ema100_pct": {"label": "Price vs EMA100 %", "kind": "num"},
+    "price_vs_ema200_pct": {"label": "Price vs EMA200 %", "kind": "num"},
+    "gp_retrace":         {"label": "Golden-pocket retrace (0-1)", "kind": "num"},
+    "gp_in_pocket":       {"label": "In golden pocket (1/0)",      "kind": "num"},
+    "gp_approaching":     {"label": "Approaching golden pocket (1/0)", "kind": "num"},
+    "gp_direction":       {"label": "Golden-pocket direction", "kind": "str"},
     "market_cap":         {"label": "Market cap",        "kind": "num"},
     "pe_ratio":           {"label": "P/E ratio",         "kind": "num"},
     "div_yield":          {"label": "Dividend yield %",  "kind": "num"},
@@ -85,6 +95,10 @@ def derive_scan_columns(df, today=None):
         sma = df.get(f"sma{n}")
         if sma is not None:
             df[f"price_vs_sma{n}_pct"] = (df["close"] / sma - 1) * 100
+    for n in (5, 10, 20, 50, 100, 200):
+        ema = df.get(f"ema{n}")
+        if ema is not None:
+            df[f"price_vs_ema{n}_pct"] = (df["close"] / ema - 1) * 100
     if "earnings_date" in df.columns:
         today = pd.Timestamp(today or pd.Timestamp.now().normalize())
         ed = pd.to_datetime(df["earnings_date"], errors="coerce")

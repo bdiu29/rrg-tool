@@ -2,7 +2,7 @@
 
 [← Back to main README](../../README.md)
 
-A TradingView-style screener over the full synced market (S&P 500 ∪ NYSE ∪ Nasdaq, ~5,300 symbols), with savable named screens, user-created watchlists, and intraday **pump/dump alerts** on a focus list of your Schwab positions and watchlist symbols. Alerts surface in-app and can route to Discord and email per watchlist.
+A TradingView-style screener over the full synced market (S&P 500 ∪ NYSE ∪ Nasdaq, ~5,300 symbols), with savable named screens, user-created watchlists, intraday **pump/dump alerts** on a focus list of your Schwab positions and watchlist symbols, and a **strategy backtester** that replays your screen over history. Alerts surface in-app and can route to Discord and email per watchlist.
 
 <p align="center">
   <img src="../../assets/screener.png" alt="Stock screener — filter builder, results table, watchlists, and alerts feed" width="900"/>
@@ -14,12 +14,15 @@ Open at **http://localhost:8000/screener.html**. Reads daily bars from the [Brea
 
 ## What it does
 
-- **Screen** the whole market with a condition builder — price/volume/RVOL, SMA relations, RSI, ATR, relative strength vs SPY (1m/3m), 52-week distances, gaps, market cap, P/E, dividend yield, beta, days-to-earnings, sector, and the sector's RRG call as a filterable column.
-- **Save** named screens; two of your real TradingView presets ship built in:
+- **Screen** the whole market with a condition builder — price/volume/RVOL, SMA & **EMA** relations (5/10/20/50/100/200), RSI, ATR, relative strength vs SPY (1m/3m), 52-week distances, gaps, **golden-pocket** Fibonacci state, market cap, P/E, dividend yield, beta, days-to-earnings, sector, and the sector's RRG call as a filterable column.
+- **Save** named screens; four presets ship built in (the first two are your real TradingView presets):
   - **Breakout** — MktCap 10M–10T · Vol chg > 80% · Vol > 100k · Price ≥ 50SMA · RVOL > 1
   - **Continuation** — Price > 50SMA · Chg > 2% · MktCap 100M–10T · Vol chg > 80% · Vol > 100k · Price > 150SMA
+  - **Golden Pocket** — price inside the bullish 0.618–0.786 retracement of its latest up-swing
+  - **Approaching Golden Pocket** — price retraced 0.5–0.618 toward that pocket (lead time before it arrives)
 - **Watch** symbols in named lists; ★ any scan row to add. The **Risk $** input adds a Shares column = `floor(risk ÷ ATR14)` for volatility-based position sizing.
 - **Get alerted** when a position or watchlist symbol shows a pump/dump signal, in-app (feed + home-hub badge + dots on the Schwab page) and optionally via Discord/email.
+- **Backtest** the current screen as an entry signal over history — win rate, expectancy, profit factor, forward returns vs SPY, and an equity curve, exportable to Markdown (see [Backtester](#backtester) below).
 
 ---
 
@@ -38,6 +41,16 @@ A screen is a JSON condition list `[{field, op, value}]`, ANDed together. Operat
 **NaN never matches** (TradingView semantics) — a symbol with no market cap fails every market-cap condition rather than slipping through a `!=` or `<`. The `FIELDS` registry (`filters.py`) drives both server-side validation *and* the frontend's field dropdown (served via `/api/screener/fields`), so adding a field is a one-place change.
 
 Rolling high/low *levels* are stored shifted one day, so "price crosses yesterday's 20-day / 52-week high-low" is detectable against them; `% off 52-week high` uses the inclusive extreme so a fresh high reads as 0.
+
+### EMA distances & the golden pocket
+
+- **EMA distances** — `price_vs_ema{5,10,20,50,100,200}_pct` join the existing SMA-distance fields. "Above the 20 EMA" is just `price_vs_ema20_pct > 0`.
+- **Golden pocket** — `golden_pocket()` finds the most recent swing leg and reports where price sits in its Fibonacci retracement. Pivots are *strict* local extremes over ±5 bars (strictness ignores flat runs) and are confirmation-lagged so there's **no lookahead**. The more recent of the last swing high/low picks the leg: a recent high ⇒ *bullish* (price retracing down into support), a recent low ⇒ *bearish* (price bouncing up into resistance). Filterable fields:
+  - `gp_direction` — `bullish` / `bearish`
+  - `gp_retrace` — 0–1 position within the leg
+  - `gp_in_pocket` — `1` when retrace is in the 0.618–0.786 golden pocket
+  - `gp_approaching` — `1` when retrace is 0.5–0.618 (on its way in, not there yet; excludes anything past 0.786)
+  - `gp_zone_low` / `gp_zone_high` — the pocket as actual price levels
 
 ---
 
@@ -106,6 +119,30 @@ For Gmail use an [app password](https://support.google.com/accounts/answer/18583
 
 ---
 
+## Backtester
+
+The screener doubles as a strategy backtester (sidecar panel → **Run ▸**). It takes the **current screen conditions as an entry signal** and replays them over history, so "finding a confluence of signals" and "validating it" are the same workflow.
+
+<p align="center">
+  <img src="../../assets/backtest.png" alt="Backtest report — stat grid, equity curve vs SPY, and forward-return study" width="900"/>
+</p>
+
+**How it works.** The same indicator math that builds the live snapshot (`metrics.compute_indicator_panels`) is computed over the *full* history, and for each trading day the backtester rebuilds the same cross-section the scanner filters and runs the same condition engine — so the backtest sees exactly what a live scan would have. Matches become entry signals.
+
+- **No lookahead, long-only.** Entries fire on signal *onset* (matched today, not yesterday — a persistent signal opens one trade, not one per day) and execute at the **next bar's open**.
+- **Exit models** (your choice per run):
+  - **Hold N days** — exit after a fixed number of bars.
+  - **ATR stop / target** — stop at `entry − k·ATR14`, target at `entry + k·ATR14` (stop checked first).
+  - **Until signal gone** — exit the first day the symbol stops matching the screen.
+- **What it reports** — trade stats (win rate, expectancy, profit factor, payoff, avg win/loss, avg bars held, best/worst), a **forward-return study** at +1/5/10/20 days with the excess vs SPY, an equal-weight daily **equity curve vs SPY** (total return, CAGR, max drawdown, Sharpe), and a trade-return histogram. **Copy MD / Download .md** export the whole report as Markdown.
+- **ML-ready.** Every trade also records its full signal feature vector at entry, so a classical-ML ranking layer (logistic / gradient boosting on those features) can train on the same records later — no model ships in v1.
+
+Runs synchronously (S&P 500 over 3 years ≈ 4s); default universe is S&P 500 (use the Universe toggle — *All* is much slower). `POST /api/screener/backtest` with `{conditions|screen_id, universe, start, end, exit}`.
+
+**Caveats it surfaces in the report:** fundamentals, earnings, and the sector RRG call use latest-known (not point-in-time) values — `rrg_call` has no history and matches nothing in a backtest; the universe is today's membership list, so deeply delisted names are absent (survivorship).
+
+---
+
 ## Routes
 
 The router is exact-path GET/POST, hence POST-verb CRUD:
@@ -118,6 +155,7 @@ The router is exact-path GET/POST, hence POST-verb CRUD:
 | GET | `/api/screener/progress` | refresh job status (2.5s poll) |
 | GET | `/api/screener/fields` | field registry + ops (drives the UI) |
 | POST | `/api/screener/scan` | run a screen `{conditions\|screen_id, universe, symbols?, sort, dir, limit}` |
+| POST | `/api/screener/backtest` | backtest a screen `{conditions\|screen_id, universe, start, end, exit}` |
 | GET / POST | `/api/screener/screens[/save\|delete\|arm]` | screens CRUD |
 | GET / POST | `/api/screener/watchlists[/save\|delete]` | watchlists CRUD |
 | GET / POST | `/api/screener/alerts[/ack]`, `/alerts/summary` | alerts feed, ack, summary |
@@ -135,8 +173,9 @@ The router is exact-path GET/POST, hence POST-verb CRUD:
 |---|---|
 | `__init__.py` | route handlers + scan assembly + `register_routes()` |
 | `store.py` | SQLite store (snapshot, fundamentals, screens, watchlists, alerts) |
-| `metrics.py` | pure pandas snapshot math (unit-tested) |
+| `metrics.py` | pure pandas indicator math — `compute_indicator_panels` (full history) / `compute_snapshot` (last row); EMAs, golden pocket (unit-tested) |
 | `filters.py` | JSON condition engine + `FIELDS` registry (unit-tested) |
+| `backtest.py` | strategy backtester — replays the scan over history (unit-tested) |
 | `rules.py` | pump/dump heuristics + armed-screen logic (unit-tested) |
 | `quotes.py` | Schwab rich quotes + batched instruments fundamentals |
 | `snapshot.py` | background jobs: snapshot rebuild + fundamentals refresh |
