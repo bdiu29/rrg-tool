@@ -211,7 +211,8 @@ def _sector_etf(symbol):
 # Positions + signal enrichment
 # ---------------------------------------------------------------------------
 
-def _positions_with_signals():
+def _fetch_raw_positions():
+    """Fetch raw positions + balances from the Schwab trader API."""
     token = _valid_token()
     r = _req.get(
         f"{SCHWAB_TRADER}/accounts",
@@ -248,6 +249,24 @@ def _positions_with_signals():
                 "open_pnl":      round(pos.get("longOpenProfitLoss", 0), 2),
                 "account":       num,
             })
+    return raw_positions, balances_by_acct
+
+
+def get_position_symbols():
+    """Public accessor for other modules (e.g. screener focus list).
+
+    Returns the symbols of all EQUITY/ETF positions across accounts.
+    Raises ValueError if the OAuth flow has never been completed.
+    """
+    raw_positions, _ = _fetch_raw_positions()
+    return sorted({
+        p["symbol"] for p in raw_positions
+        if p["asset_type"] in ("EQUITY", "ETF")
+    })
+
+
+def _positions_with_signals():
+    raw_positions, balances_by_acct = _fetch_raw_positions()
 
     # Resolve sector ETFs for equity and ETF positions
     needed_etfs = set()

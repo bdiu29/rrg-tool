@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stock Screener — Market Intelligence Harness</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0e14;
+    --panel: #111722;
+    --grid: #1c2533;
+    --ink: #e6edf3;
+    --dim: #8b94a3;
+    --accent: #ffb000;
+    --green: #2fbf8f;
+    --red: #e4596b;
+    --blue: #5b8dd9;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Spline Sans Mono', monospace;
+    min-height: 100vh;
+    padding: 28px;
+    max-width: 1500px;
+    margin: 0 auto;
+    background-image: radial-gradient(circle at 20% 0%, rgba(255,176,0,0.05), transparent 40%);
+  }
+
+  .nav-link {
+    font-size: 10px;
+    color: var(--dim);
+    text-decoration: none;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: color 0.15s;
+    display: inline-block;
+    margin-bottom: 7px;
+  }
+  .nav-link:hover { color: var(--accent); }
+
+  h1 {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 800;
+    font-size: 30px;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  h1 .sub {
+    display: block;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--dim);
+    letter-spacing: 0.08em;
+    margin-top: 7px;
+    text-transform: uppercase;
+  }
+
+  header { display: flex; justify-content: space-between; align-items: flex-end;
+           flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+
+  .status-line { font-size: 10.5px; color: var(--dim); text-align: right; line-height: 1.8; }
+  .pill {
+    display: inline-block; font-size: 9.5px; font-weight: 600; padding: 2px 8px;
+    border-radius: 5px; background: var(--grid); color: var(--dim);
+    letter-spacing: 0.05em; margin-left: 6px;
+  }
+  .pill.on   { background: rgba(47,191,143,0.16); color: var(--green); }
+  .pill.warn { background: rgba(255,176,0,0.14);  color: var(--accent); }
+  .pill.err  { background: rgba(228,89,107,0.16); color: var(--red); }
+
+  .btn {
+    background: var(--panel);
+    border: 1px solid var(--grid);
+    border-radius: 8px;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 11.5px;
+    padding: 7px 13px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  .btn.primary { background: var(--accent); color: #0a0e14; border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { opacity: 0.9; }
+  .btn.small { font-size: 10px; padding: 4px 9px; }
+
+  .toggle {
+    display: inline-flex;
+    background: var(--panel);
+    border: 1px solid var(--grid);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .toggle button {
+    background: transparent;
+    border: none;
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 7px 12px;
+    cursor: pointer;
+  }
+  .toggle button.active { background: var(--accent); color: #0a0e14; font-weight: 600; }
+
+  select, input[type="text"], input[type="number"] {
+    background: var(--bg);
+    border: 1px solid var(--grid);
+    border-radius: 7px;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 6px 8px;
+  }
+  select:focus, input:focus { outline: none; border-color: var(--accent); }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--grid);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+  .panel h3 {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--dim); margin-bottom: 11px; font-weight: 600;
+  }
+
+  .ctl-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+  .ctl-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); }
+
+  .cond-row { display: flex; gap: 7px; align-items: center; margin-bottom: 7px; }
+  .cond-row select.field { width: 185px; }
+  .cond-row select.op    { width: 95px; }
+  .cond-row input.val    { width: 110px; }
+  .cond-row .x {
+    background: none; border: none; color: var(--dim); cursor: pointer;
+    font-size: 14px; padding: 2px 6px;
+  }
+  .cond-row .x:hover { color: var(--red); }
+
+  .layout { display: grid; grid-template-columns: 1fr 330px; gap: 14px; align-items: start; }
+  @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } }
+
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: right; padding: 9px 10px; font-size: 9px; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--dim); border-bottom: 1px solid var(--grid);
+    cursor: pointer; white-space: nowrap; user-select: none;
+  }
+  th.l, td.l { text-align: left; }
+  th:hover { color: var(--accent); }
+  th.sorted { color: var(--accent); }
+  td {
+    padding: 8px 10px; border-bottom: 1px solid rgba(28,37,51,0.6);
+    font-size: 11.5px; text-align: right; white-space: nowrap;
+  }
+  tr:hover td { background: rgba(255,176,0,0.025); }
+  td .sym { font-weight: 600; cursor: pointer; }
+  td .sym:hover { color: var(--accent); }
+  .pos { color: var(--green); }
+  .neg { color: var(--red); }
+  .live-dot {
+    display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent); margin-right: 5px; vertical-align: 1px;
+  }
+  .star { cursor: pointer; color: var(--dim); }
+  .star:hover { color: var(--accent); }
+
+  .action-badge {
+    display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: 0.07em;
+    text-transform: uppercase; padding: 2px 7px; border-radius: 5px;
+    border: 1px solid currentColor; line-height: 1.4; white-space: nowrap;
+  }
+  .ab-in    { color: var(--green); }
+  .ab-out   { color: var(--red); }
+  .ab-hold  { color: var(--blue); }
+  .ab-watch { color: var(--accent); }
+  .ab-avoid { color: var(--dim); }
+
+  .progress-wrap { display: none; align-items: center; gap: 10px; font-size: 10px;
+                   color: var(--dim); margin-top: 10px; }
+  .progress-track { flex: 1; height: 6px; border-radius: 4px; background: var(--grid); }
+  .progress-fill  { height: 100%; width: 0%; border-radius: 4px; background: var(--accent);
+                    transition: width 0.4s; }
+
+  .wl { border: 1px solid var(--grid); border-radius: 9px; padding: 10px; margin-bottom: 9px; }
+  .wl-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; }
+  .wl-name { font-size: 12px; font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
+  .chip {
+    font-size: 10px; background: var(--grid); border-radius: 5px; padding: 2px 7px;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .chip b { cursor: pointer; color: var(--dim); font-weight: 400; }
+  .chip b:hover { color: var(--red); }
+  .ch-toggle {
+    font-size: 11px; cursor: pointer; opacity: 0.35; margin-left: 5px;
+    user-select: none;
+  }
+  .ch-toggle.on { opacity: 1; }
+  .ch-toggle.unavail { cursor: not-allowed; opacity: 0.15; }
+
+  .alert-row { border-bottom: 1px solid rgba(28,37,51,0.6); padding: 8px 2px; font-size: 11px; }
+  .alert-row .meta { color: var(--dim); font-size: 9.5px; margin-top: 2px; }
+  .kind-badge {
+    display: inline-block; font-size: 8.5px; font-weight: 700; letter-spacing: 0.06em;
+    padding: 1px 6px; border-radius: 4px; margin-right: 6px; text-transform: uppercase;
+  }
+  .kind-pump { background: rgba(47,191,143,0.16); color: var(--green); }
+  .kind-dump { background: rgba(228,89,107,0.16); color: var(--red); }
+  .kind-info { background: rgba(91,141,217,0.16); color: var(--blue); }
+  .alert-row.acked { opacity: 0.45; }
+
+  .footnote { font-size: 9.5px; color: var(--dim); margin-top: 10px; line-height: 1.6; }
+  .muted { color: var(--dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <div>
+      <a href="/" class="nav-link">← Home</a>
+      <a href="/rrg.html" class="nav-link" style="margin-left:14px">RRG →</a>
+      <a href="/breadth.html" class="nav-link" style="margin-left:14px">Breadth →</a>
+      <a href="/schwab.html" class="nav-link" style="margin-left:14px">Schwab →</a>
+    </div>
+    <h1>Stock Screener<span class="sub">filters · watchlists · pump/dump alerts</span></h1>
+  </div>
+  <div class="status-line" id="status-line">loading status…</div>
+</header>
+
+<div class="panel">
+  <div class="ctl-row">
+    <span class="ctl-label">Screen</span>
+    <select id="screen-select" style="min-width:170px"></select>
+    <button class="btn small" id="btn-save">Save</button>
+    <button class="btn small" id="btn-saveas">Save as…</button>
+    <button class="btn small" id="btn-delete">Delete</button>
+    <label style="font-size:10.5px; color:var(--dim); display:flex; align-items:center; gap:5px; margin-left:6px;">
+      <input type="checkbox" id="armed-check"> armed (alert on new focus-list matches)
+    </label>
+    <span style="flex:1"></span>
+    <span class="ctl-label">Universe</span>
+    <div class="toggle" id="universe-toggle">
+      <button data-u="all" class="active">All</button>
+      <button data-u="sp500">S&amp;P 500</button>
+      <button data-u="nyse">NYSE</button>
+      <button data-u="nasdaq">Nasdaq</button>
+    </div>
+    <button class="btn" id="btn-refresh">Refresh data</button>
+  </div>
+
+  <div id="conditions"></div>
+
+  <div class="ctl-row" style="margin-bottom:0">
+    <button class="btn small" id="btn-add-cond">+ condition</button>
+    <button class="btn primary" id="btn-scan">Run scan</button>
+    <span class="muted" id="scan-info" style="font-size:10.5px"></span>
+    <span style="flex:1"></span>
+    <span class="ctl-label">Risk $</span>
+    <input type="number" id="risk-input" placeholder="e.g. 500" style="width:90px"
+           title="Dollar risk per position — adds a Shares column sized to 1×ATR">
+  </div>
+
+  <div class="progress-wrap" id="progress-wrap">
+    <span id="progress-text"></span>
+    <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="panel" style="overflow-x:auto">
+    <table>
+      <thead><tr id="thead-row"></tr></thead>
+      <tbody id="results-body"></tbody>
+    </table>
+    <div class="footnote" id="survivorship-note"></div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h3>Watchlists <button class="btn small" id="btn-new-wl" style="float:right; margin-top:-4px">+ new</button></h3>
+      <div id="watchlists"></div>
+      <div class="footnote">💬 Discord / ✉️ email routing per list — alerts for a symbol
+        go to every channel of every list holding it. In-app alerts are always on.</div>
+    </div>
+
+    <div class="panel">
+      <h3>Alerts <button class="btn small" id="btn-ack-all" style="float:right; margin-top:-4px">Ack all</button></h3>
+      <div id="alerts-feed" style="max-height:420px; overflow-y:auto"></div>
+      <div class="footnote" style="margin-top:12px">
+        Positions alerts →
+        <span class="ch-toggle" id="pos-discord" title="route position alerts to Discord">💬</span>
+        <span class="ch-toggle" id="pos-email" title="route position alerts to email">✉️</span>
+        &nbsp;·&nbsp; test:
+        <button class="btn small" id="btn-test-discord">discord</button>
+        <button class="btn small" id="btn-test-email">email</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+let FIELDS = {}, NUM_OPS = [], STR_OPS = [];
+let screens = [], watchlists = [];
+let currentScreenId = null;
+let universe = 'all';
+let sortCol = 'chg_pct', sortDir = 'desc';
+let lastRows = [];
+let notifyAvail = { discord: false, email: false };
+let posChannels = new Set();
+let progressTimer = null;
+
+const COLS = [
+  { key: 'symbol',            label: 'Symbol',    left: true },
+  { key: 'close',             label: 'Last',      fmt: v => num(v, 2) },
+  { key: 'chg_pct',           label: 'Chg %',     fmt: signed, cls: signCls },
+  { key: 'rvol_10d',          label: 'RVOL',      fmt: v => num(v, 1) },
+  { key: 'vol_chg_pct',       label: 'Vol Δ%',    fmt: v => num(v, 0) },
+  { key: 'volume',            label: 'Vol',       fmt: compact },
+  { key: 'price_vs_sma50_pct',label: 'vs 50SMA',  fmt: signed, cls: signCls },
+  { key: 'rsi14',             label: 'RSI',       fmt: v => num(v, 0) },
+  { key: 'atr_pct',           label: 'ATR %',     fmt: v => num(v, 1) },
+  { key: 'rs_1m_pct',         label: 'RS 1m',     fmt: signed, cls: signCls },
+  { key: 'rs_3m_pct',         label: 'RS 3m',     fmt: signed, cls: signCls },
+  { key: 'pct_from_52w_high', label: '% 52wH',    fmt: signed, cls: signCls },
+  { key: 'market_cap',        label: 'Mkt Cap',   fmt: compact },
+  { key: 'pe_ratio',          label: 'P/E',       fmt: v => num(v, 1) },
+  { key: 'days_to_earnings',  label: 'Earn (d)',  fmt: v => v == null ? '—' : num(v, 0) },
+  { key: 'sector_etf',        label: 'Sector',    fmt: v => v || '—' },
+  { key: 'rrg_call',          label: 'RRG',       html: rrgBadge },
+];
+
+function num(v, d) { return v == null ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d > 0 ? Math.min(d, 2) : 0 }); }
+function signed(v) { return v == null ? '—' : (v > 0 ? '+' : '') + num(v, 1); }
+function signCls(v) { return v == null ? '' : v > 0 ? 'pos' : v < 0 ? 'neg' : ''; }
+function compact(v) {
+  if (v == null) return '—';
+  const a = Math.abs(v);
+  if (a >= 1e12) return (v / 1e12).toFixed(2) + 'T';
+  if (a >= 1e9)  return (v / 1e9).toFixed(2) + 'B';
+  if (a >= 1e6)  return (v / 1e6).toFixed(1) + 'M';
+  if (a >= 1e3)  return (v / 1e3).toFixed(0) + 'K';
+  return String(v);
+}
+function rrgBadge(v) {
+  if (!v) return '<span class="muted">—</span>';
+  const cls = { 'ROTATE IN': 'ab-in', 'ROTATE OUT': 'ab-out', 'HOLD': 'ab-hold',
+                'WATCH': 'ab-watch', 'AVOID': 'ab-avoid' }[v] || 'ab-avoid';
+  return `<span class="action-badge ${cls}">${v.replace('ROTATE ', '')}</span>`;
+}
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+// --- status -----------------------------------------------------------------
+
+async function loadStatus() {
+  try {
+    const d = await (await fetch('/api/screener/status')).json();
+    notifyAvail = d.notify.configured;
+    posChannels = new Set(d.positions_channels || []);
+    renderPosChannels();
+    const p = d.poller || {};
+    const pollerPill = p.running
+      ? (p.market_open ? '<span class="pill on">live</span>' : '<span class="pill">market closed</span>')
+      : '<span class="pill err">poller off</span>';
+    const stale = d.stale ? ' <span class="pill warn">stale — refresh</span>' : '';
+    const f = d.fundamentals || {};
+    $('status-line').innerHTML =
+      `snapshot ${d.snapshot_date || '—'} · ${(d.n_symbols || 0).toLocaleString()} symbols${stale}<br>` +
+      `caps ${f.market_cap || 0}/${d.n_symbols || 0} · sectors ${f.sector || 0} · ` +
+      `alerts today ${d.alerts.today}${pollerPill}`;
+    $('survivorship-note').textContent = d.note || '';
+  } catch { $('status-line').textContent = 'status unavailable'; }
+}
+
+// --- filter builder ---------------------------------------------------------
+
+function condRow(c) {
+  const row = document.createElement('div');
+  row.className = 'cond-row';
+  const fieldSel = document.createElement('select');
+  fieldSel.className = 'field';
+  for (const [k, spec] of Object.entries(FIELDS)) {
+    const o = new Option(spec.label, k);
+    fieldSel.add(o);
+  }
+  fieldSel.value = c.field || 'chg_pct';
+
+  const opSel = document.createElement('select');
+  opSel.className = 'op';
+  const vWrap = document.createElement('span');
+  vWrap.style.display = 'inline-flex';
+  vWrap.style.gap = '5px';
+
+  function rebuildOps() {
+    const kind = (FIELDS[fieldSel.value] || {}).kind || 'num';
+    const ops = kind === 'num' ? NUM_OPS : STR_OPS;
+    opSel.innerHTML = '';
+    for (const op of ops) opSel.add(new Option(op, op));
+    if (ops.includes(c.op)) opSel.value = c.op;
+    rebuildValue();
+  }
+  function rebuildValue() {
+    const kind = (FIELDS[fieldSel.value] || {}).kind || 'num';
+    vWrap.innerHTML = '';
+    if (opSel.value === 'between') {
+      for (const i of [0, 1]) {
+        const inp = document.createElement('input');
+        inp.type = 'number'; inp.step = 'any'; inp.className = 'val';
+        inp.placeholder = i === 0 ? 'min' : 'max';
+        inp.value = Array.isArray(c.value) && c.value[i] != null ? c.value[i] : '';
+        vWrap.appendChild(inp);
+      }
+    } else if (opSel.value === 'in') {
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.className = 'val'; inp.style.width = '170px';
+      inp.placeholder = 'A, B, C';
+      inp.value = Array.isArray(c.value) ? c.value.join(', ') : (c.value || '');
+      vWrap.appendChild(inp);
+    } else {
+      const inp = document.createElement('input');
+      inp.type = kind === 'num' ? 'number' : 'text';
+      inp.step = 'any'; inp.className = 'val';
+      inp.value = c.value != null && !Array.isArray(c.value) ? c.value : '';
+      vWrap.appendChild(inp);
+    }
+  }
+  fieldSel.onchange = () => { c.field = fieldSel.value; rebuildOps(); };
+  opSel.onchange = () => { c.op = opSel.value; rebuildValue(); };
+  rebuildOps();
+
+  const x = document.createElement('button');
+  x.className = 'x'; x.textContent = '✕'; x.title = 'remove condition';
+  x.onclick = () => row.remove();
+
+  row.append(fieldSel, opSel, vWrap, x);
+  row._read = () => {
+    const kind = (FIELDS[fieldSel.value] || {}).kind || 'num';
+    const inputs = vWrap.querySelectorAll('input');
+    let value;
+    if (opSel.value === 'between') {
+      value = [parseFloat(inputs[0].value), parseFloat(inputs[1].value)];
+      if (value.some(isNaN)) return null;
+    } else if (opSel.value === 'in') {
+      value = inputs[0].value.split(',').map(s => s.trim().toUpperCase()).filter(Boolean);
+      if (!value.length) return null;
+    } else if (kind === 'num') {
+      value = parseFloat(inputs[0].value);
+      if (isNaN(value)) return null;
+    } else {
+      value = inputs[0].value.trim();
+      if (!value) return null;
+    }
+    return { field: fieldSel.value, op: opSel.value, value };
+  };
+  return row;
+}
+
+function setConditions(conds) {
+  const box = $('conditions');
+  box.innerHTML = '';
+  for (const c of (conds.length ? conds : [{ field: 'chg_pct', op: '>', value: 2 }]))
+    box.appendChild(condRow({ ...c }));
+}
+
+function readConditions() {
+  return [...$('conditions').children].map(r => r._read()).filter(Boolean);
+}
+
+// --- screens ----------------------------------------------------------------
+
+async function loadScreens(keepSelection) {
+  const d = await (await fetch('/api/screener/screens')).json();
+  screens = d.screens;
+  const sel = $('screen-select');
+  sel.innerHTML = '<option value="">— unsaved screen —</option>';
+  for (const s of screens)
+    sel.add(new Option(`${s.name}${s.builtin ? ' ◆' : ''}${s.armed ? ' ⚡' : ''}`, s.id));
+  if (keepSelection && currentScreenId) sel.value = String(currentScreenId);
+}
+
+function selectScreen(id) {
+  currentScreenId = id ? Number(id) : null;
+  const s = screens.find(x => x.id === currentScreenId);
+  if (s) {
+    setConditions(s.conditions);
+    setUniverse(s.universe || 'all');
+    $('armed-check').checked = s.armed;
+  }
+}
+
+async function saveScreen(asNew) {
+  const s = screens.find(x => x.id === currentScreenId);
+  let name = s && !asNew ? s.name : prompt('Screen name:', s ? s.name + ' copy' : 'My screen');
+  if (!name) return;
+  const body = {
+    id: asNew ? null : currentScreenId,
+    name, universe,
+    conditions: readConditions(),
+    armed: $('armed-check').checked,
+  };
+  const r = await fetch('/api/screener/screens/save', { method: 'POST', body: JSON.stringify(body) });
+  const d = await r.json();
+  if (!r.ok) { alert(d.error || 'save failed'); return; }
+  currentScreenId = d.id;
+  await loadScreens(true);
+}
+
+// --- scan -------------------------------------------------------------------
+
+function setUniverse(u) {
+  universe = u;
+  for (const b of $('universe-toggle').children)
+    b.classList.toggle('active', b.dataset.u === u);
+}
+
+function renderHead() {
+  const tr = $('thead-row');
+  tr.innerHTML = '';
+  const cols = [...COLS];
+  if (parseFloat($('risk-input').value) > 0)
+    cols.splice(9, 0, { key: '_shares', label: 'Shares', fmt: v => v });
+  cols.push({ key: '_star', label: '★' });
+  for (const c of cols) {
+    const th = document.createElement('th');
+    th.textContent = c.label + (c.key === sortCol ? (sortDir === 'desc' ? ' ↓' : ' ↑') : '');
+    if (c.left) th.className = 'l';
+    if (c.key === sortCol) th.classList.add('sorted');
+    if (!c.key.startsWith('_'))
+      th.onclick = () => {
+        if (sortCol === c.key) sortDir = sortDir === 'desc' ? 'asc' : 'desc';
+        else { sortCol = c.key; sortDir = 'desc'; }
+        runScan();
+      };
+    tr.appendChild(th);
+  }
+}
+
+function renderRows(rows) {
+  renderHead();
+  const risk = parseFloat($('risk-input').value);
+  const body = $('results-body');
+  body.innerHTML = '';
+  for (const r of rows) {
+    const tr = document.createElement('tr');
+    const cells = [];
+    cells.push(`<td class="l">${r.live ? '<span class="live-dot" title="live intraday quote"></span>' : ''}<span class="sym">${esc(r.symbol)}</span></td>`);
+    for (const c of COLS.slice(1)) {
+      const v = r[c.key];
+      const cls = c.cls ? c.cls(v) : '';
+      const content = c.html ? c.html(v) : esc(c.fmt(v));
+      cells.push(`<td class="${cls}">${content}</td>`);
+      if (c.key === 'atr_pct' && risk > 0) {
+        const shares = r.atr14 > 0 ? Math.floor(risk / r.atr14) : null;
+        cells.push(`<td title="floor(${risk} / ATR ${num(r.atr14, 2)})">${shares == null ? '—' : shares.toLocaleString()}</td>`);
+      }
+    }
+    cells.push(`<td><span class="star" title="add to watchlist" data-sym="${esc(r.symbol)}">★</span></td>`);
+    tr.innerHTML = cells.join('');
+    body.appendChild(tr);
+  }
+  body.querySelectorAll('.star').forEach(el =>
+    el.onclick = () => addToWatchlist(el.dataset.sym));
+}
+
+async function runScan(extra) {
+  $('scan-info').textContent = 'scanning…';
+  const body = { conditions: readConditions(), universe, sort: sortCol, dir: sortDir, limit: 200, ...(extra || {}) };
+  try {
+    const r = await fetch('/api/screener/scan', { method: 'POST', body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'scan failed');
+    lastRows = d.rows;
+    renderRows(d.rows);
+    const live = d.live_patched?.length ? ` · ${d.live_patched.length} live` : '';
+    const stale = d.stale ? ' · snapshot refreshing…' : '';
+    $('scan-info').textContent =
+      `${d.total_matches} match${d.total_matches === 1 ? '' : 'es'} (showing ${d.rows.length}) · as of ${d.as_of || '—'}${live}${stale}`;
+  } catch (e) {
+    $('scan-info').textContent = 'Error: ' + e.message;
+  }
+}
+
+// --- refresh job ------------------------------------------------------------
+
+async function startRefresh() {
+  const r = await fetch('/api/screener/refresh', { method: 'POST', body: JSON.stringify({ kind: 'both' }) });
+  if (r.status === 409) { pollProgress(); return; }
+  pollProgress();
+}
+
+async function pollProgress() {
+  const d = await (await fetch('/api/screener/progress')).json();
+  const wrap = $('progress-wrap');
+  if (d.state === 'running') {
+    wrap.style.display = 'flex';
+    const pct = d.total ? Math.round(100 * d.done / d.total) : 0;
+    $('progress-fill').style.width = pct + '%';
+    $('progress-text').textContent = `${d.phase || d.kind}: ${d.done}/${d.total} — ${d.message}`;
+    progressTimer = setTimeout(pollProgress, 2500);
+  } else {
+    if (wrap.style.display === 'flex') {
+      $('progress-text').textContent = d.message || 'done';
+      $('progress-fill').style.width = '100%';
+      setTimeout(() => { wrap.style.display = 'none'; }, 4000);
+      loadStatus(); runScan();
+    }
+    clearTimeout(progressTimer);
+  }
+}
+
+// --- watchlists -------------------------------------------------------------
+
+async function loadWatchlists() {
+  const d = await (await fetch('/api/screener/watchlists')).json();
+  watchlists = d.watchlists;
+  const box = $('watchlists');
+  box.innerHTML = watchlists.length ? '' : '<div class="muted" style="font-size:11px">none yet — ★ a row or hit “+ new”</div>';
+  for (const w of watchlists) {
+    const div = document.createElement('div');
+    div.className = 'wl';
+    const chTog = ch => {
+      const on = w.channels.includes(ch);
+      const ok = notifyAvail[ch];
+      const icon = ch === 'discord' ? '💬' : '✉️';
+      const title = ok ? `route to ${ch}` : `${ch} not configured (.env)`;
+      return `<span class="ch-toggle ${on ? 'on' : ''} ${ok ? '' : 'unavail'}" data-wl="${w.id}" data-ch="${ch}" title="${title}">${icon}</span>`;
+    };
+    div.innerHTML = `
+      <div class="wl-head">
+        <span class="wl-name">${esc(w.name)}${chTog('discord')}${chTog('email')}</span>
+        <span>
+          <button class="btn small" data-view="${w.id}">view</button>
+          <button class="btn small" data-del="${w.id}">✕</button>
+        </span>
+      </div>
+      <div class="chips">${w.symbols.map(s =>
+        `<span class="chip">${esc(s)}<b data-wl="${w.id}" data-rm="${esc(s)}">✕</b></span>`).join('') || '<span class="muted" style="font-size:10px">empty</span>'}</div>
+      <input type="text" placeholder="add symbol ↵" data-add="${w.id}" style="width:120px">`;
+    box.appendChild(div);
+  }
+  box.querySelectorAll('[data-view]').forEach(b => b.onclick = () => {
+    const w = watchlists.find(x => x.id == b.dataset.view);
+    setConditions([]); $('conditions').innerHTML = '';
+    runScan({ symbols: w.symbols, conditions: [] });
+  });
+  box.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm('Delete watchlist?')) return;
+    await fetch('/api/screener/watchlists/delete', { method: 'POST', body: JSON.stringify({ id: Number(b.dataset.del) }) });
+    loadWatchlists();
+  });
+  box.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
+    const w = watchlists.find(x => x.id == b.dataset.wl);
+    await saveWatchlist(w, w.symbols.filter(s => s !== b.dataset.rm));
+  });
+  box.querySelectorAll('[data-add]').forEach(inp => inp.onkeydown = async e => {
+    if (e.key !== 'Enter' || !inp.value.trim()) return;
+    const w = watchlists.find(x => x.id == inp.dataset.add);
+    await saveWatchlist(w, [...w.symbols, inp.value.trim().toUpperCase()]);
+  });
+  box.querySelectorAll('.ch-toggle[data-wl]').forEach(t => t.onclick = async () => {
+    if (t.classList.contains('unavail')) return;
+    const w = watchlists.find(x => x.id == t.dataset.wl);
+    const ch = t.dataset.ch;
+    const channels = w.channels.includes(ch)
+      ? w.channels.filter(c => c !== ch) : [...w.channels, ch];
+    await fetch('/api/screener/watchlists/save', { method: 'POST',
+      body: JSON.stringify({ id: w.id, name: w.name, symbols: w.symbols, channels }) });
+    loadWatchlists();
+  });
+}
+
+async function saveWatchlist(w, symbols) {
+  await fetch('/api/screener/watchlists/save', { method: 'POST',
+    body: JSON.stringify({ id: w.id, name: w.name, symbols, channels: w.channels }) });
+  loadWatchlists();
+}
+
+async function addToWatchlist(sym) {
+  if (!watchlists.length) {
+    const name = prompt(`No watchlists yet — name one for ${sym}:`, 'Watchlist');
+    if (!name) return;
+    await fetch('/api/screener/watchlists/save', { method: 'POST',
+      body: JSON.stringify({ name, symbols: [sym], channels: [] }) });
+    return loadWatchlists();
+  }
+  let w = watchlists[0];
+  if (watchlists.length > 1) {
+    const name = prompt(`Add ${sym} to which list?\n${watchlists.map(x => '· ' + x.name).join('\n')}`, watchlists[0].name);
+    if (!name) return;
+    w = watchlists.find(x => x.name.toLowerCase() === name.toLowerCase());
+    if (!w) { alert('No such list'); return; }
+  }
+  await saveWatchlist(w, [...new Set([...w.symbols, sym])]);
+}
+
+async function newWatchlist() {
+  const name = prompt('Watchlist name:');
+  if (!name) return;
+  await fetch('/api/screener/watchlists/save', { method: 'POST',
+    body: JSON.stringify({ name, symbols: [], channels: [] }) });
+  loadWatchlists();
+}
+
+// --- alerts -----------------------------------------------------------------
+
+async function loadAlerts() {
+  try {
+    const d = await (await fetch('/api/screener/alerts?days=5')).json();
+    const box = $('alerts-feed');
+    box.innerHTML = d.alerts.length ? '' : '<div class="muted" style="font-size:11px">no alerts in the last 5 days</div>';
+    for (const a of d.alerts) {
+      const div = document.createElement('div');
+      div.className = 'alert-row' + (a.acknowledged ? ' acked' : '');
+      const sent = a.delivered.map(c => c === 'discord' ? '💬' : '✉️').join('');
+      div.innerHTML = `
+        <span class="kind-badge kind-${a.kind}">${a.kind}</span>
+        <b>${esc(a.symbol)}</b> ${esc(a.message)} ${sent}
+        <div class="meta">${a.ts}${a.acknowledged ? '' :
+          ` · <span style="cursor:pointer; color:var(--accent)" data-ack="${a.id}">ack</span>`}</div>`;
+      box.appendChild(div);
+    }
+    box.querySelectorAll('[data-ack]').forEach(el => el.onclick = async () => {
+      await fetch('/api/screener/alerts/ack', { method: 'POST',
+        body: JSON.stringify({ ids: [Number(el.dataset.ack)] }) });
+      loadAlerts(); loadStatus();
+    });
+  } catch { /* fail soft */ }
+}
+
+function renderPosChannels() {
+  for (const ch of ['discord', 'email']) {
+    const el = $('pos-' + ch);
+    el.classList.toggle('on', posChannels.has(ch));
+    el.classList.toggle('unavail', !notifyAvail[ch]);
+    el.onclick = async () => {
+      if (!notifyAvail[ch]) return;
+      posChannels.has(ch) ? posChannels.delete(ch) : posChannels.add(ch);
+      await fetch('/api/screener/settings', { method: 'POST',
+        body: JSON.stringify({ positions_channels: [...posChannels] }) });
+      renderPosChannels();
+    };
+  }
+}
+
+async function testChannel(ch, btn) {
+  btn.disabled = true;
+  const r = await fetch('/api/screener/notify/test', { method: 'POST', body: JSON.stringify({ channel: ch }) });
+  const d = await r.json();
+  btn.textContent = d.ok ? 'sent ✓' : 'failed';
+  if (!d.ok && d.error) alert(`${ch}: ${d.error}`);
+  setTimeout(() => { btn.textContent = ch; btn.disabled = false; }, 2500);
+}
+
+// --- boot -------------------------------------------------------------------
+
+async function boot() {
+  const f = await (await fetch('/api/screener/fields')).json();
+  FIELDS = f.fields; NUM_OPS = f.num_ops; STR_OPS = f.str_ops;
+
+  await loadScreens();
+  const breakout = screens.find(s => s.name === 'Breakout');
+  if (breakout) { $('screen-select').value = String(breakout.id); selectScreen(breakout.id); }
+  else setConditions([]);
+
+  $('screen-select').onchange = e => selectScreen(e.target.value);
+  $('btn-save').onclick = () => saveScreen(false);
+  $('btn-saveas').onclick = () => saveScreen(true);
+  $('btn-delete').onclick = async () => {
+    if (!currentScreenId || !confirm('Delete screen?')) return;
+    const r = await fetch('/api/screener/screens/delete', { method: 'POST',
+      body: JSON.stringify({ id: currentScreenId }) });
+    if (!r.ok) alert((await r.json()).error || 'delete failed');
+    currentScreenId = null;
+    loadScreens();
+  };
+  $('armed-check').onchange = async () => {
+    if (!currentScreenId) return;
+    await fetch('/api/screener/screens/arm', { method: 'POST',
+      body: JSON.stringify({ id: currentScreenId, armed: $('armed-check').checked }) });
+    loadScreens(true);
+  };
+  for (const b of $('universe-toggle').children)
+    b.onclick = () => { setUniverse(b.dataset.u); runScan(); };
+  $('btn-add-cond').onclick = () => $('conditions').appendChild(condRow({ field: 'chg_pct', op: '>', value: 2 }));
+  $('btn-scan').onclick = () => runScan();
+  $('btn-refresh').onclick = startRefresh;
+  $('btn-new-wl').onclick = newWatchlist;
+  $('btn-ack-all').onclick = async () => {
+    await fetch('/api/screener/alerts/ack', { method: 'POST', body: JSON.stringify({ all: true }) });
+    loadAlerts(); loadStatus();
+  };
+  $('btn-test-discord').onclick = e => testChannel('discord', e.target);
+  $('btn-test-email').onclick = e => testChannel('email', e.target);
+  $('risk-input').onchange = () => renderRows(lastRows);
+
+  loadStatus(); loadWatchlists(); loadAlerts();
+  pollProgress();          // attach to a refresh already in flight
+  runScan();
+  setInterval(loadAlerts, 30000);
+  setInterval(loadStatus, 60000);
+}
+
+boot();
+</script>
+
+</body>
+</html>

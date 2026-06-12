@@ -14,3 +14,6 @@ __pycache__/
 
 # Breadth module local data store
 modules/breadth/data/
+
+# Screener module local data store
+modules/screener/data/

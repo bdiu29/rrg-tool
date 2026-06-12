@@ -332,6 +332,7 @@
       <a href="/" class="nav-back">← Home</a>
       <a href="/rrg.html" class="nav-back" style="margin-left:14px">RRG →</a>
       <a href="/breadth.html" class="nav-back" style="margin-left:14px">Breadth →</a>
+      <a href="/screener.html" class="nav-back" style="margin-left:14px">Screener →</a>
     </div>
     <h1>Schwab Account<span class="sub">Positions · Sector Signals</span></h1>
   </div>
@@ -494,7 +495,7 @@ function renderTable(positions) {
     // Use rrg_why as a tooltip on the signal cell if available
     const whyAttr = p.rrg_why ? ` title="${p.rrg_why.replace(/"/g, '&quot;')}"` : '';
     tr.innerHTML = `
-      <td><div class="sym">${p.symbol}</div></td>
+      <td><div class="sym">${p.symbol}<span class="alert-dot" data-sym="${p.symbol}"></span></div></td>
       <td><div class="desc" title="${(p.description || '').replace(/"/g,'&quot;')}">${p.description || '—'}</div></td>
       <td class="r">${fmtQty(p.quantity)}</td>
       <td class="r">${fmt$(p.market_value)}</td>
@@ -505,6 +506,29 @@ function renderTable(positions) {
       <td class="c">${actionBadge(p.action)}</td>`;
     tbody.appendChild(tr);
   }
+  applyAlertDots();
+}
+
+// Screener alert markers — fail-soft so this page never depends on the
+// screener module being healthy.
+async function applyAlertDots() {
+  try {
+    const r = await fetch('/api/screener/alerts/summary');
+    if (!r.ok) return;
+    const d = await r.json();
+    const colors = { dump: 'var(--c-sell)', pump: 'var(--c-buy)', info: 'var(--c-hold)' };
+    document.querySelectorAll('.alert-dot').forEach(el => {
+      const hits = (d.by_symbol || {})[el.dataset.sym];
+      if (!hits || !hits.length) { el.textContent = ''; return; }
+      // dump outranks pump outranks info for the dot color
+      const kind = hits.some(h => h.kind === 'dump') ? 'dump'
+                 : hits.some(h => h.kind === 'pump') ? 'pump' : 'info';
+      el.title = 'screener alerts: ' + hits.map(h => h.rule_key).join(', ');
+      el.style.cssText = `display:inline-block;margin-left:6px;font-size:9px;` +
+        `font-weight:700;color:${colors[kind]}`;
+      el.textContent = `●${hits.length > 1 ? hits.length : ''}`;
+    });
+  } catch { /* screener offline — no dots */ }
 }
 
 // ---------------------------------------------------------------------------

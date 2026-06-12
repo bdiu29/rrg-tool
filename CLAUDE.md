@@ -4,7 +4,7 @@
 
 Personal market intelligence platform to guide investment/trading decisions: avoid drawdowns, catch rotation setups, and surface actionable signals. Built module by module from free data sources, culminating in AI subagents per data domain that feed a unified harness.
 
-**Current state:** Home hub (live status badges) + RRG tool (sector rotation) + Schwab account module (positions with sector signals) + Breadth module (market breadth tracker with regime filter).
+**Current state:** Home hub (live status badges) + RRG tool (sector rotation) + Schwab account module (positions with sector signals) + Breadth module (market breadth tracker with regime filter) + Screener module (TradingView-style filters, watchlists, intraday pump/dump alerts with Discord/email routing).
 
 **Planned modules:** sector/industry trackers (software, space, semis), news/macro events, JPM collar tracking, fed interest rate probabilities, AI subagents.
 
@@ -40,6 +40,18 @@ modules/
     cli.py                   # python3 -m modules.breadth.cli → daily summary
     breadth.html             # dashboard frontend (Plotly via CDN)
     data/                    # breadth.db (gitignored)
+  screener/
+    __init__.py              # route handlers + scan assembly + register_routes()
+    store.py                 # SQLite store (snapshot, fundamentals, screens, watchlists, alerts)
+    metrics.py               # pure pandas snapshot math (unit-tested)
+    filters.py               # JSON condition engine + FIELDS registry (unit-tested)
+    rules.py                 # pump/dump alert heuristics + armed screens (unit-tested)
+    quotes.py                # Schwab rich quotes + batched instruments fundamentals
+    snapshot.py              # background jobs: snapshot rebuild + fundamentals refresh
+    notify.py                # Discord webhook + SMTP email delivery, per-watchlist routing
+    poller.py                # intraday quote poller (daemon) + shared scan-frame/alert pass
+    screener.html            # screener frontend
+    data/                    # screener.db (gitignored)
 tests/                       # stdlib unittest — /usr/bin/python3 -m unittest discover tests
 .env                         # API keys + Schwab tokens (never committed)
 .venv/                       # empty — use system /usr/bin/python3
@@ -92,6 +104,7 @@ Pages:
 - `http://localhost:8000/rrg.html` — RRG sector rotation chart
 - `http://localhost:8000/breadth.html` — market breadth dashboard
 - `http://localhost:8000/schwab.html` — Schwab account positions + sector signals
+- `http://localhost:8000/screener.html` — stock screener + watchlists + alerts
 
 Dependencies (already installed in `.venv`):
 ```
@@ -151,9 +164,26 @@ Market breadth tracker: short-term timing signals (McClellan, TRIN, % above 20/5
 
 ---
 
+## Screener Module
+
+TradingView-style screener over the full synced universes (sp500 ∪ nyse ∪ nasdaq from breadth.db, ~5.3k symbols), with saved screens, watchlists, and pump/dump alerts on a **focus list** = Schwab positions ∪ watchlist symbols.
+
+**Architecture:** scans never compute indicators per-request. A background job (`snapshot.py`, breadth-backfill thread pattern) rebuilds a `snapshot` table (one indicator row per symbol — chg/gap/vol-chg/RVOL, SMA20/50/150/200, RSI14, ATR14, RS vs SPY 1m/3m, shifted 20d/252d high-low levels) from breadth's bars in ~5s whenever bars are newer than the snapshot; scan requests are sub-second pandas filters over it. The scan handler auto-kicks a rebuild when stale and serves the old snapshot meanwhile.
+
+- **Filter engine** (`filters.py`): screens are JSON condition lists `[{field, op, value}]` ANDed; ops `> >= < <= == != between in`. **NaN never matches** (TradingView semantics — no market cap ⇒ fails every market-cap condition). The `FIELDS` registry drives both validation and the frontend dropdown — add a field once. Levels stored with `shift(1)` so "price crosses yesterday's 20d/52w high-low" is detectable; `%-off-52w-high` uses the inclusive extreme (fresh high reads 0). Built-in seeded screens "Breakout" and "Continuation" are the user's real TradingView presets — keep them.
+- **Fundamentals** (`quotes.get_schwab_fundamentals` + `snapshot._run_fundamentals`): Schwab `instruments?projection=fundamental` accepts comma-separated batches (100/call verified live; field names `marketCap`, `sharesOutstanding`, `avg10DaysVolume`, `peRatio`, `dividendYield`, `beta` — Schwab reports missing numerics as 0.0, stored as NULL). Full universe ≈ 1 min. yfinance fills the gaps (phase 2), then earnings dates for the focus list only (phase 3 — full-universe calendar fetch is too slow) and the sector long tail (phase 4, only source for sector). All phases resumable via per-symbol `status/updated_at`.
+- **Alerts** (`rules.py` + `poller.py`): dedupe is structural — `UNIQUE(date, symbol, rule_key)` + `INSERT OR IGNORE`, so a rule fires at most once per symbol per day and external channels only ever see newly inserted rows. Heuristics (constants at top of `rules.py`): vol thrust (RVOL ≥ 3 AND |chg| ≥ 3%), RSI 80/20, ±15% SMA20 stretch, 20d/52w level breaks (52w suppresses the 20d echo), ±4% gaps, earnings ≤ 7 days. Extremes carry the kind of the *reversal* they warn about (overbought ⇒ dump). Any saved screen can be **armed**: fires only when a focus symbol *newly* matches (`screen_matches` table remembers the previous match set).
+- **Intraday poller** (`poller.py`): singleton daemon, auto-started in `register_routes`; ticks every 180s during 9:30–16:00 ET Mon–Fri, idles otherwise (holidays unmodeled — empty polls are harmless). Pulls rich Schwab quotes (running `totalVolume` — the field yfinance can't provide), patches focus-list snapshot rows in memory (live RVOL = volume ÷ session-fraction-prorated 10d avg, floored at 2% of the session to stop open-bell blowups), runs the rules + armed screens. The EOD pass after each snapshot rebuild reuses the same `run_alert_pass` path, so alert logic exists exactly once. **Gotcha fixed once already:** `time.monotonic()` starts near 0 per process on macOS — never use `0.0` as a "never fetched" cache sentinel; use `None`.
+- **Notify** (`notify.py`): in-app always; per-watchlist channel routing — alert for symbol S goes to every channel of every watchlist holding S, plus the `positions_channels` meta setting for held symbols. One batched Discord post / email per pass; fail-soft (channel errors recorded in status, never raised into the poller). `.env` keys: `DISCORD_WEBHOOK_URL`; `SMTP_HOST`/`SMTP_PORT` (465 SSL)/`SMTP_USER`/`SMTP_PASS`/`ALERT_EMAIL_TO`.
+- **Routes:** exact-path router ⇒ POST-verb CRUD. `GET /screener.html`, `/api/screener/{status,progress,fields,screens,watchlists,alerts,alerts/summary}`, `POST /api/screener/{refresh,scan,screens/save|delete|arm,watchlists/save|delete,alerts/ack,notify/test,settings,poller}`. `scan` accepts `{conditions|screen_id, universe, symbols?, sort, dir, limit}` — `symbols` powers the watchlist "view" button. `alerts/summary.by_symbol` drives the home badge and the alert dots on schwab.html.
+- **Store** (`modules/screener/data/screener.db`, gitignored): WAL, per-call connections, same conventions as breadth. Bars are **read from breadth's store** — never duplicated.
+- ATR risk sizing is frontend-only: the "Risk $" input adds a Shares column = floor(risk ÷ ATR14).
+
+---
+
 ## Development Conventions
 
-- One `modules/<name>/` folder per data domain. No cross-module imports except: schwab imports `compute_rrg`, `BENCHMARK`, `DEFAULT_TICKERS` from rrg (intentional — schwab signals are derived from RRG); breadth imports `get_access_token` from schwab (intentional — schwab owns OAuth, breadth reuses the authenticated session for market data).
+- One `modules/<name>/` folder per data domain. No cross-module imports except: schwab imports `compute_rrg`, `BENCHMARK`, `DEFAULT_TICKERS` from rrg (intentional — schwab signals are derived from RRG); breadth imports `get_access_token` from schwab (intentional — schwab owns OAuth, breadth reuses the authenticated session for market data); screener imports breadth's `store`/`universes`/`datasource` (bars + RateLimiter — breadth owns price history), schwab's `get_access_token`/`get_position_symbols`/`SECTOR_ETF_MAP`/`_read_env`, and rrg's `compute_rrg` for sector context (all intentional — screener is a consumer of every other module's domain).
 - Prefer free data sources first (yfinance, FRED, etc.) before paid APIs.
 - No build pipeline — vanilla Python stdlib server, vanilla JS in HTML. Add a framework only when the UI complexity genuinely requires it.
 - Business logic lives in module `__init__.py`. `app.py` stays thin.

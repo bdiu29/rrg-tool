@@ -151,14 +151,15 @@ def get_series(symbol, fields=("close",), start=None):
     return df
 
 
-def get_panels(symbols, start=None):
-    """Close + volume panels (date × symbol) for a symbol list, chunked to
-    stay under SQLite's bound-variable limit."""
+def get_panels(symbols, start=None, fields=("close", "volume")):
+    """Field panels (date × symbol) for a symbol list, returned as a tuple in
+    `fields` order, chunked to stay under SQLite's bound-variable limit."""
+    cols   = ", ".join(fields)
     frames = []
     for i in range(0, len(symbols), 500):
         chunk = symbols[i:i + 500]
         ph    = ",".join("?" * len(chunk))
-        q     = f"SELECT symbol, date, close, volume FROM bars WHERE symbol IN ({ph})"
+        q     = f"SELECT symbol, date, {cols} FROM bars WHERE symbol IN ({ph})"
         args  = list(chunk)
         if start:
             q    += " AND date >= ?"
@@ -166,13 +167,14 @@ def get_panels(symbols, start=None):
         with connect() as conn:
             frames.append(pd.read_sql_query(q, conn, params=args))
     if not frames:
-        return pd.DataFrame(), pd.DataFrame()
+        return tuple(pd.DataFrame() for _ in fields)
     df = pd.concat(frames, ignore_index=True)
     if df.empty:
-        return pd.DataFrame(), pd.DataFrame()
-    close  = df.pivot(index="date", columns="symbol", values="close").sort_index()
-    volume = df.pivot(index="date", columns="symbol", values="volume").sort_index()
-    return close, volume
+        return tuple(pd.DataFrame() for _ in fields)
+    return tuple(
+        df.pivot(index="date", columns="symbol", values=f).sort_index()
+        for f in fields
+    )
 
 
 def bar_counts(symbols):

@@ -16,6 +16,7 @@ from modules.home import register_routes as register_home
 from modules.rrg import register_routes as register_rrg
 from modules.schwab import register_routes as register_schwab
 from modules.breadth import register_routes as register_breadth
+from modules.screener import register_routes as register_screener
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +70,7 @@ register_home(router)
 register_rrg(router)
 register_schwab(router)
 register_breadth(router)
+register_screener(router)
 
 
 # ---------------------------------------------------------------------------
