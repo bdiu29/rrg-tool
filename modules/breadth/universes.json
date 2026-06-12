@@ -1,0 +1,38 @@
+{
+  "settings": {
+    "datasource": "schwab",
+    "history_years": 3,
+    "constituents_max_age_days": 7
+  },
+  "universes": {
+    "sp500": {
+      "name": "S&P 500",
+      "source": "wikipedia_sp500",
+      "index": { "symbol": "SPY", "schwab": "SPY" },
+      "description": "Large-cap core — the workhorse universe"
+    },
+    "nyse": {
+      "name": "NYSE",
+      "source": "nasdaqtrader_nyse",
+      "index": { "symbol": "^NYA", "schwab": "$NYA" },
+      "description": "NYSE Composite — broad participation"
+    },
+    "nasdaq": {
+      "name": "Nasdaq",
+      "source": "nasdaqtrader_nasdaq",
+      "index": { "symbol": "^IXIC", "schwab": "$COMPX" },
+      "description": "Nasdaq Composite — speculative/growth participation"
+    }
+  },
+  "concentration": { "numerator": "RSP", "denominator": "SPY" },
+  "_notes": {
+    "swapping": "Add a universe here (e.g. Russell 2000 via a csv_url source) — no code changes needed. The dashboard buttons are generated from this file.",
+    "csv_url_example": {
+      "name": "Russell 2000",
+      "source": "csv_url",
+      "url": "https://example.com/holdings.csv",
+      "symbol_column": "Ticker",
+      "index": { "symbol": "^RUT", "schwab": "$RUT" }
+    }
+  }
+}

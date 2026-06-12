@@ -4,7 +4,7 @@
 
 Personal market intelligence platform to guide investment/trading decisions: avoid drawdowns, catch rotation setups, and surface actionable signals. Built module by module from free data sources, culminating in AI subagents per data domain that feed a unified harness.
 
-**Current state:** RRG tool (sector rotation) + Schwab account module (positions with sector signals).
+**Current state:** Home hub (live status badges) + RRG tool (sector rotation) + Schwab account module (positions with sector signals) + Breadth module (market breadth tracker with regime filter).
 
 **Planned modules:** sector/industry trackers (software, space, semis), news/macro events, JPM collar tracking, fed interest rate probabilities, AI subagents.
 
@@ -16,17 +16,33 @@ Each module is a self-contained Python package in `modules/<name>/` with its own
 `app.py` is the single entry point — it owns the HTTP server and delegates routing to modules.
 
 ```
-app.py                       # HTTP server + router (no business logic)
+app.py                       # ThreadingHTTPServer + router (no business logic)
 modules/
   __init__.py                # shared Response class
+  home/
+    __init__.py              # serves the hub homepage at /
+    index.html               # module cards with async live status badges
   rrg/
     __init__.py              # RRG math + route handlers + register_routes()
-    index.html               # RRG frontend
+    index.html               # RRG frontend (served at /rrg.html; /index.html legacy alias)
   schwab/
     __init__.py              # Schwab OAuth + API + route handlers + register_routes()
     schwab.html              # Schwab frontend
+  breadth/
+    __init__.py              # route handlers + dashboard/summary assembly
+    datasource.py            # DataSource interface: SchwabDataSource / YFinanceDataSource
+    store.py                 # SQLite store (bars, members, sync_state, computed series)
+    universes.py             # constituent fetchers (Wikipedia, nasdaqtrader, generic CSV)
+    universes.json           # universe config — swappable without code changes
+    backfill.py              # resumable background sync job (rate-limit aware)
+    indicators.py            # pure pandas breadth math (unit-tested)
+    regime.py                # regime state + divergence detection + interpretation
+    cli.py                   # python3 -m modules.breadth.cli → daily summary
+    breadth.html             # dashboard frontend (Plotly via CDN)
+    data/                    # breadth.db (gitignored)
+tests/                       # stdlib unittest — /usr/bin/python3 -m unittest discover tests
 .env                         # API keys + Schwab tokens (never committed)
-.venv/                       # Python 3.9 virtualenv
+.venv/                       # empty — use system /usr/bin/python3
 ```
 
 ### Module contract
@@ -72,7 +88,9 @@ python3 app.py
 ```
 
 Pages:
-- `http://localhost:8000/` — RRG sector rotation chart
+- `http://localhost:8000/` — hub homepage (module cards + live badges)
+- `http://localhost:8000/rrg.html` — RRG sector rotation chart
+- `http://localhost:8000/breadth.html` — market breadth dashboard
 - `http://localhost:8000/schwab.html` — Schwab account positions + sector signals
 
 Dependencies (already installed in `.venv`):
@@ -92,8 +110,7 @@ Defined in `modules/rrg/__init__.py`:
 - **Normalization differs by interval — this matters.** Weekly: per-ticker z-scores stretched by `RATIO_SCALE_WK=3.5` / `MOM_SCALE_WK=2.2`. Daily: **DIRECT affine scaling** of the raw trend ratio and its ROC (`x = RATIO_C_D + RATIO_K_D·(r−100)` = 100.55 + 1.678·(r−100); `y = 100 + MOM_K_D·m_adj`, K=1.883) — *no z-scores*. Per-ticker z-normalization divides each sector by its own σ, equalizing tail travel; the reference (sp-rrg.png, an Elliott-wave-based RRG, 2026-06-09) shows differential travel (XLE sweeps ~6 x-units while XLU crawls ~1), which only direct scaling preserves. Constants fitted by `calibrate_rrg.py` (staged grid search against digitized reference paths; mean head error ≈ 0.78) — rerun that script to recalibrate.
 - **Elliott-wave phase model (daily momentum):** counter-trend momentum is squashed at the 100 line — `t_soft = tanh(Δ60d ratio / TREND_ETA)`; where `t_soft·mom < 0` (corrective leg: wave-2/4 pullback or wave-B bounce), `m_adj` is tanh-capped at `MOM_TAU` (≈0.2 y-units after K). Corrections approach the quadrant boundary but don't cross; only a genuine trend flip (t_soft ≈ 0 → sign change = new wave 1) releases the cap, so quadrant crossings reflect motive→corrective alternation. Verified: XLE's May-2026 wave-B bounce (+3.5 y-units raw) is suppressed instead of reading as rotation. Each sector exports a `phase` field ("impulse ↑ (wave 3/5)" / "pullback (wave 2/4)" / "impulse ↓ (wave C/3)" / "bounce (wave B)" / "basing/topping (trend turn)") shown in the tooltip and feeding `_rotation_call` (bounce → WATCH not ROTATE IN; pullback → HOLD not ROTATE OUT).
 - Weekly spans: fast EMA 10w / slow EMA 40w, `mom_diff=5` (5-week ROC), z-windows 52w (ratio) / 26w (momentum). The 40-week slow leg keeps the macro character — a 3-week wave-2 pullback won't flip x, a real trend change will.
-- **Daily = a macro lens in trading days** (50/140d spans — fast leg matches weekly's 10w, slow leg fitted slightly shorter than weekly's 40w; `mom_diff=15`, `mom_smooth=3`): a macro view updated intraday, NOT a faster story — short daily windows read 3-week laggard bounces as rotation (wave-2 head-fakes). `mom_smooth` is deliberately LIGHT: momentum must **lead** the ratio for leaders to arc over the top of the RRG oval (heavy smoothing = lag = straight diagonal tails, no rollover — this was the XLK-rollover bug). One tail point per calendar week, anchored to each week's **last** bar (not counted back from the newest bar) so points stay put as dates advance.
-- **Intraday debug timeframes (1H / 2H):** same 50/140 trading-day lens with windows converted to bars (×6.5 / ×3.25 bars per day) — heads agree with Daily within ~1 unit; useful for watching the head develop intraday, not a different story. yfinance 60m data only goes back ~730d (2H is resampled from 60m). One tail point per trading day. Toggle buttons in the UI next to Weekly/Daily.
+- **Daily (the default view) = a macro lens in trading days** (50/140d spans — fast leg matches weekly's 10w, slow leg fitted slightly shorter than weekly's 40w; `mom_diff=15`, `mom_smooth=3`): a macro view updated intraday, NOT a faster story — short daily windows read 3-week laggard bounces as rotation (wave-2 head-fakes). `mom_smooth` is deliberately LIGHT: momentum must **lead** the ratio for leaders to arc over the top of the RRG oval (heavy smoothing = lag = straight diagonal tails, no rollover — this was the XLK-rollover bug). One tail point per calendar week, anchored to each week's **last** bar (not counted back from the newest bar) so points stay put as dates advance. (Intraday 1H/2H timeframes were prototyped then removed — the calendar-scaled lens made them just the daily story with a noisier head.)
 - Weekly z-score normalization uses a **flat** rolling window (not EWMA) — intentional; EWMA hugs its own recent values and collapses spread
 - **As-of rollback:** `compute_rrg(..., asof="YYYY-MM-DD")` / `GET /api/rrg?asof=` truncates history to show the RRG as of a past date. All windows are trailing, so rollback only removes head points — historical tail points are stable. Downloads are cached in-memory for 10 min (`_PRICE_CACHE`) so date-stepping doesn't re-hit yfinance. Note: weekly bars are Monday-dated and contain the full week, so weekly rollback has whole-week granularity.
 
@@ -113,9 +130,30 @@ Tunable scoring functions in `modules/rrg/__init__.py`:
 
 ---
 
+## Breadth Module
+
+Market breadth tracker: short-term timing signals (McClellan, TRIN, % above 20/50d) read **through** a long-term regime (Summation, % above 200d, divergence flags). Breadth is always plotted against index price on a shared time axis.
+
+**Data flow:** `DataSource` adapter → SQLite store → `breadth_daily` aggregates → derived chains → regime/divergences computed at request time.
+
+- **Adapters** (`datasource.py`): `SchwabDataSource` default — market data base `https://api.schwabapi.com/marketdata/v1`, token via `modules.schwab.get_access_token()` (the only breadth→schwab import), paced at 110 req/min under the 120 hard limit, retry/backoff on 429/5xx, symbol translation `BRK.B`→`BRK/B`. `YFinanceDataSource` is the automatic fallback (and supports bulk chunks of 200; translation `BRK.B`→`BRK-B`). Index symbols per adapter live in `universes.json` (`^NYA`/`$NYA`, `^IXIC`/`$COMPX`); if Schwab rejects an index symbol the sync falls back to yfinance for that series only.
+- **Universes** (`universes.json` + `universes.py`): sp500 (Wikipedia scrape via bs4 — **no lxml installed**), nyse/nasdaq (nasdaqtrader.com symbol directories, common stock only — warrants/units/preferreds filtered by name keywords). Config-driven; a generic `csv_url` fetcher exists so Russell 2000/S&P 600 are config entries. **Survivorship**: lists are today's members; membership is stored dated (`members.first_seen/last_seen`) so point-in-time lists can be imported later. The caveat is displayed on the dashboard and in summaries — keep it.
+- **Sync** (`backfill.py`): singleton daemon-thread job; 3y backfill (`HISTORY_YEARS`), incremental after that (per-symbol `sync_state.last_date`, 7-day overlap re-fetch, idempotent upserts). Resume = just re-run. S&P 500 ≈ 5 min via Schwab; NYSE/Nasdaq ≈ 20–40 min. **This is why app.py uses ThreadingHTTPServer** — a sync must not block the dashboard.
+- **Math** (`indicators.py`, unit-tested in `tests/`):
+  - **McClellan is RATIO-ADJUSTED** (`rana = 1000·(adv−dec)/(adv+dec)`, osc = EMA19−EMA39) — deliberate deviation from the classic raw-net-advances form: universes are runtime-swappable (500 vs 3,000 issues) and regime thresholds (`MCC_OVERSOLD=-70` etc.) must be scale-independent.
+  - **Summation Index uses the closed form `19·EMA39 − 9·EMA19`, NOT `cumsum(osc)`.** The cumsum identity is `Σosc = 19·E39 − 9·E19 − 10·rana₀` — a plain cumsum carries a permanent `−10·rana₀` artifact from the arbitrary first day of stored history (this was found live: a +600 first-day rana put the summation at −5,937 in a positive-breadth market). The closed form's increment still equals the oscillator exactly; steady-state level ≈ 10× average rana. Don't "simplify" it back to cumsum.
+  - % above MA / new highs-lows use per-day **eligible counts** as denominators (a symbol needs 200 bars before it counts for pct_above_200) — keeps young listings from distorting percentages.
+  - Bullish Percent Index: stubbed (needs a P&F signal engine).
+- **Regime** (`regime.py`): scored — Summation sign + 5d slope + %>200d (≥60 broad / <50 narrow) − active divergence flags; `≥3 → HEALTHY` (all legs green required), `≤−2 → DETERIORATING`, else NEUTRAL. **Divergences are discrete dated events**: index makes a fresh 63d high above its prior one while A-D line / %>50d / %>20d sit below their value at that prior high (bullish mirror at lows); flags stay "active" 21 bars. `interpret()` maps short-term extremes through the regime (oversold in HEALTHY = buy-the-dip; same print in DETERIORATING = fade, smaller, tighter). Thresholds are named constants at the top — tune there.
+- **Routes:** `GET /breadth.html`, `/api/breadth/universes`, `/api/breadth/dashboard?universe=&days=`, `/api/breadth/summary?universe=`, `/api/breadth/progress`, `POST /api/breadth/sync {universe, source?}` (409 if a job is running).
+- **Store** (`modules/breadth/data/breadth.db`, gitignored): WAL mode, per-call connections (backfill thread + request threads coexist); symbol IN-queries chunked at 500 (SQLite bound-variable limit).
+- Daily summary CLI: `python3 -m modules.breadth.cli [universe] [--json]` — same code path as `/api/breadth/summary`; the homepage badge reads the same endpoint.
+
+---
+
 ## Development Conventions
 
-- One `modules/<name>/` folder per data domain. No cross-module imports except: schwab imports `compute_rrg`, `BENCHMARK`, `DEFAULT_TICKERS` from rrg (intentional dependency — schwab signals are derived from RRG).
+- One `modules/<name>/` folder per data domain. No cross-module imports except: schwab imports `compute_rrg`, `BENCHMARK`, `DEFAULT_TICKERS` from rrg (intentional — schwab signals are derived from RRG); breadth imports `get_access_token` from schwab (intentional — schwab owns OAuth, breadth reuses the authenticated session for market data).
 - Prefer free data sources first (yfinance, FRED, etc.) before paid APIs.
 - No build pipeline — vanilla Python stdlib server, vanilla JS in HTML. Add a framework only when the UI complexity genuinely requires it.
 - Business logic lives in module `__init__.py`. `app.py` stays thin.

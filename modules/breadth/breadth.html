@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Market Breadth</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0e14;
+    --panel: #111722;
+    --grid: #1c2533;
+    --plot-bg: #0f1521;
+    --ink: #e6edf3;
+    --dim: #8b94a3;
+    --accent: #ffb000;
+    --green: #2fbf8f;
+    --red: #e4596b;
+    --blue: #5b8dd9;
+    --teal: #4ec3c9;
+    --purple: #b58de0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Spline Sans Mono', monospace;
+    min-height: 100vh;
+    padding: 28px;
+    max-width: 1240px;
+    margin: 0 auto;
+    background-image: radial-gradient(circle at 20% 0%, rgba(255,176,0,0.04), transparent 40%);
+  }
+
+  .nav-link {
+    font-size: 10px;
+    color: var(--dim);
+    text-decoration: none;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: color 0.15s;
+    display: inline-block;
+    margin-bottom: 7px;
+  }
+  .nav-link:hover { color: var(--accent); }
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  h1 {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 800;
+    font-size: 30px;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  h1 .sub {
+    display: block;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--dim);
+    letter-spacing: 0.08em;
+    margin-top: 6px;
+    text-transform: uppercase;
+  }
+
+  .controls { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; justify-content: flex-end; }
+  .ctl { display: flex; flex-direction: column; gap: 5px; }
+  .ctl-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); padding-left: 2px; }
+
+  .toggle {
+    display: flex;
+    background: var(--panel);
+    border: 1px solid var(--grid);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .toggle button {
+    background: transparent;
+    border: none;
+    color: var(--dim);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 9px 16px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+  }
+  .toggle button.active { background: var(--accent); color: #0a0e14; font-weight: 600; }
+  .toggle button .chip {
+    display: inline-block;
+    font-size: 8.5px;
+    color: var(--red);
+    margin-left: 5px;
+    vertical-align: 2px;
+  }
+  .toggle button.active .chip { color: #5a3c00; }
+
+  .btn {
+    background: var(--panel);
+    border: 1px solid var(--grid);
+    border-radius: 8px;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+
+  /* Regime banner */
+  .banner {
+    background: var(--panel);
+    border: 1px solid var(--grid);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    display: none;
+    gap: 22px;
+    align-items: flex-start;
+  }
+  .banner.show { display: flex; flex-wrap: wrap; }
+  .regime-pill {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 800;
+    font-size: 24px;
+    letter-spacing: 0.01em;
+    padding: 10px 20px;
+    border-radius: 10px;
+    flex-shrink: 0;
+  }
+  .regime-pill.HEALTHY       { background: rgba(47,191,143,0.15); color: var(--green); }
+  .regime-pill.NEUTRAL       { background: rgba(91,141,217,0.15); color: var(--blue); }
+  .regime-pill.DETERIORATING { background: rgba(228,89,107,0.15); color: var(--red); }
+  .regime-pill .score { display:block; font-family:'Spline Sans Mono',monospace; font-weight:400; font-size:10px; margin-top:3px; opacity:0.75; }
+
+  .banner-col { flex: 1; min-width: 260px; }
+  .banner-col h3 { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin-bottom: 6px; }
+  .banner-col li { font-size: 11.5px; line-height: 1.6; list-style: none; color: var(--ink); }
+  .banner-col li::before { content: "· "; color: var(--dim); }
+  #interp-list li::before { content: "→ "; color: var(--accent); }
+
+  .flag {
+    display: inline-block;
+    font-size: 10px;
+    padding: 3px 9px;
+    border-radius: 6px;
+    margin: 2px 4px 2px 0;
+  }
+  .flag.bearish { background: rgba(228,89,107,0.15); color: var(--red); }
+  .flag.bullish { background: rgba(47,191,143,0.15); color: var(--green); }
+  .flag.zbt     { background: rgba(47,191,143,0.25); color: var(--green); font-weight: 600; }
+
+  /* Metrics strip */
+  .metrics {
+    display: none;
+    grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .metrics.show { display: grid; }
+  .metric {
+    background: var(--panel);
+    border: 1px solid var(--grid);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .metric .k { font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+  .metric .v { font-size: 16px; font-weight: 600; margin-top: 3px; }
+
+  /* Status / progress */
+  .statusbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    font-size: 10.5px;
+    color: var(--dim);
+    margin-bottom: 10px;
+  }
+  .progress-wrap { display: none; flex: 1; min-width: 220px; align-items: center; gap: 10px; }
+  .progress-wrap.show { display: flex; }
+  .progress-track {
+    flex: 1; height: 6px; border-radius: 4px; background: var(--grid); overflow: hidden;
+  }
+  .progress-fill { height: 100%; width: 0%; background: var(--accent); transition: width 0.4s; }
+
+  #chart {
+    background: var(--plot-bg);
+    border: 1px solid var(--grid);
+    border-radius: 12px;
+    min-height: 300px;
+  }
+
+  .empty-state {
+    display: none;
+    background: var(--panel);
+    border: 1px dashed var(--grid);
+    border-radius: 12px;
+    padding: 48px 24px;
+    text-align: center;
+  }
+  .empty-state.show { display: block; }
+  .empty-state p { color: var(--dim); font-size: 12.5px; margin-bottom: 18px; line-height: 1.7; }
+
+  .footnote {
+    font-size: 10px;
+    color: var(--dim);
+    line-height: 1.7;
+    margin-top: 14px;
+  }
+  .footnote strong { color: var(--ink); font-weight: 500; }
+
+  .loading { color: var(--dim); font-size: 12px; padding: 40px; text-align: center; }
+</style>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+</head>
+<body>
+
+<header>
+  <div>
+    <div>
+      <a href="/" class="nav-link">← Home</a>
+      <a href="/rrg.html" class="nav-link" style="margin-left:14px">RRG →</a>
+      <a href="/schwab.html" class="nav-link" style="margin-left:14px">Schwab →</a>
+    </div>
+    <h1>Market Breadth<span class="sub">Participation vs <span id="index-sym">—</span> · regime &amp; divergences</span></h1>
+  </div>
+  <div class="controls">
+    <div class="ctl">
+      <span class="ctl-label">Universe</span>
+      <div class="toggle" id="universe-toggle"></div>
+    </div>
+    <div class="ctl">
+      <span class="ctl-label">Range</span>
+      <div class="toggle" id="range-toggle">
+        <button data-days="126">6M</button>
+        <button data-days="252" class="active">1Y</button>
+        <button data-days="504">2Y</button>
+        <button data-days="9999">All</button>
+      </div>
+    </div>
+    <div class="ctl">
+      <span class="ctl-label">&nbsp;</span>
+      <button class="btn" id="sync-btn">Update data</button>
+    </div>
+  </div>
+</header>
+
+<div class="banner" id="banner">
+  <div class="regime-pill" id="regime-pill">—<span class="score"></span></div>
+  <div class="banner-col">
+    <h3>Why</h3>
+    <ul id="reason-list"></ul>
+  </div>
+  <div class="banner-col">
+    <h3>Read (short-term through the regime)</h3>
+    <ul id="interp-list"></ul>
+    <div id="flag-row" style="margin-top:8px"></div>
+  </div>
+</div>
+
+<div class="metrics" id="metrics"></div>
+
+<div class="statusbar">
+  <span id="data-status">loading…</span>
+  <div class="progress-wrap" id="progress-wrap">
+    <span id="progress-text"></span>
+    <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+  </div>
+</div>
+
+<div class="empty-state" id="empty-state">
+  <p id="empty-text"></p>
+  <button class="btn" id="backfill-btn">Backfill now</button>
+</div>
+
+<div id="chart"><div class="loading">loading breadth data…</div></div>
+
+<p class="footnote">
+  <strong>Survivorship caveat:</strong> <span id="surv-note"></span><br>
+  McClellan Oscillator/Summation are <strong>ratio-adjusted</strong> (1000·(adv−dec)/(adv+dec)) so readings are comparable across universes of different size.
+  Bullish Percent Index not shown — requires a point-&amp;-figure signal engine (stubbed).
+</p>
+
+<script>
+const C = {
+  accent:'#ffb000', green:'#2fbf8f', red:'#e4596b', blue:'#5b8dd9',
+  teal:'#4ec3c9', purple:'#b58de0', ink:'#e6edf3', dim:'#8b94a3',
+  grid:'rgba(124,134,148,0.13)',
+};
+
+let universes = [];
+let current   = null;     // current universe key
+let dash      = null;     // last dashboard payload
+let rangeDays = 252;
+let pollTimer = null;
+
+// ---------------------------------------------------------------------------
+// Data loading
+// ---------------------------------------------------------------------------
+
+async function loadUniverses() {
+  const r = await fetch('/api/breadth/universes');
+  const d = await r.json();
+  universes = d.universes;
+  if (!current) current = d.default;
+  renderUniverseButtons();
+}
+
+function renderUniverseButtons() {
+  const el = document.getElementById('universe-toggle');
+  el.innerHTML = '';
+  for (const u of universes) {
+    const b = document.createElement('button');
+    b.textContent = u.name;
+    b.title = `${u.description} — ${u.status.members} symbols`;
+    if (!u.status.breadth_days) {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.textContent = '○';
+      chip.title = 'no local data yet';
+      b.appendChild(chip);
+    }
+    if (u.key === current) b.classList.add('active');
+    b.onclick = () => { current = u.key; renderUniverseButtons(); loadDashboard(); };
+    el.appendChild(b);
+  }
+}
+
+async function loadDashboard() {
+  document.getElementById('data-status').textContent = 'loading…';
+  const r = await fetch(`/api/breadth/dashboard?universe=${current}&days=5000`);
+  if (!r.ok) {
+    document.getElementById('data-status').textContent = 'error loading dashboard';
+    return;
+  }
+  dash = await r.json();
+  document.getElementById('surv-note').textContent = dash.note || '';
+  if (dash.empty) {
+    showEmpty();
+    return;
+  }
+  document.getElementById('empty-state').classList.remove('show');
+  document.getElementById('chart').style.display = '';
+  document.getElementById('index-sym').textContent = dash.index.symbol;
+  renderBanner();
+  renderMetrics();
+  renderStatus();
+  renderChart();
+}
+
+function showEmpty() {
+  const u = universes.find(x => x.key === current) || {name: current, status:{members:'?'}};
+  document.getElementById('banner').classList.remove('show');
+  document.getElementById('metrics').classList.remove('show');
+  document.getElementById('chart').style.display = 'none';
+  const est = u.status.members > 1500 ? '20–40 min via Schwab (rate-limited), a few min via yfinance' : '~5 min via Schwab';
+  document.getElementById('empty-text').innerHTML =
+    `No local data for <strong>${u.name}</strong> (${u.status.members} symbols). ` +
+    `First backfill pulls 3 years of daily bars — ${est}. It runs in the background and is resumable.`;
+  document.getElementById('empty-state').classList.add('show');
+  document.getElementById('data-status').textContent = `${u.name}: not backfilled yet`;
+}
+
+// ---------------------------------------------------------------------------
+// Banner / metrics / status
+// ---------------------------------------------------------------------------
+
+function renderBanner() {
+  const b = document.getElementById('banner');
+  b.classList.add('show');
+  const pill = document.getElementById('regime-pill');
+  pill.className = 'regime-pill ' + dash.regime.state;
+  pill.innerHTML = `${dash.regime.state}<span class="score">score ${dash.regime.score >= 0 ? '+' : ''}${dash.regime.score} · ${dash.name} · ${dash.dates[dash.dates.length-1]}</span>`;
+  document.getElementById('reason-list').innerHTML =
+    dash.regime.reasons.map(r => `<li>${r}</li>`).join('');
+  document.getElementById('interp-list').innerHTML =
+    dash.interpretation.map(r => `<li>${r}</li>`).join('');
+
+  const flags = [];
+  for (const e of dash.active_divergences)
+    flags.push(`<span class="flag ${e.kind}" title="${e.detail}">⚑ ${e.date} ${e.kind} (${e.measure})</span>`);
+  const lastDates = dash.dates.slice(-10);
+  for (const z of dash.zbt_events)
+    if (lastDates.includes(z)) flags.push(`<span class="flag zbt">⚡ ZBT ${z}</span>`);
+  document.getElementById('flag-row').innerHTML = flags.join('');
+}
+
+function fmt(v, dp=0, sign=false) {
+  if (v === null || v === undefined) return '—';
+  const s = v.toFixed(dp);
+  return (sign && v > 0 ? '+' : '') + s;
+}
+
+function renderMetrics() {
+  const s = dash.series, n = dash.dates.length - 1;
+  const last = k => s[k] ? s[k][n] : null;
+  const netAdv = (last('advances') ?? 0) - (last('declines') ?? 0);
+  const items = [
+    ['McClellan',  fmt(last('mcclellan'), 0, true)],
+    ['Summation',  fmt(last('summation'), 0, true)],
+    ['TRIN',       fmt(last('trin'), 2)],
+    ['Net Adv',    fmt(netAdv, 0, true)],
+    ['NH−NL',      fmt(last('nh_nl'), 0, true)],
+    ['>20d MA',    fmt(last('pct_above_20'), 0) + '%'],
+    ['>50d MA',    fmt(last('pct_above_50'), 0) + '%'],
+    ['>200d MA',   fmt(last('pct_above_200'), 0) + '%'],
+  ];
+  const el = document.getElementById('metrics');
+  el.innerHTML = items.map(([k, v]) =>
+    `<div class="metric"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+  el.classList.add('show');
+}
+
+function renderStatus() {
+  const st = dash.status;
+  document.getElementById('data-status').textContent =
+    `${dash.name}: ${st.synced}/${st.members} symbols cached · ${st.breadth_days} breadth days · data through ${st.last_date} · constituents refreshed ${st.refreshed}`;
+}
+
+// ---------------------------------------------------------------------------
+// Chart — stacked panels on a shared time axis
+// ---------------------------------------------------------------------------
+
+const PANELS = [
+  { weight: 2.0, title: '' },                                              // price (title set per-universe)
+  { weight: 1.1, title: 'CUMULATIVE A-D LINE · A-D VOLUME LINE →' },
+  { weight: 1.1, title: 'McCLELLAN OSC (ratio-adj) · SUMMATION →' },
+  { weight: 1.1, title: '% ABOVE 20d / 50d / 200d MA' },
+  { weight: 1.0, title: 'TRIN · UP/DOWN VOLUME RATIO →' },
+  { weight: 1.0, title: '52-WK NEW HIGHS − NEW LOWS · HIGH-LOW INDEX →' },
+  { weight: 0.8, title: 'CONCENTRATION' },
+];
+
+function panelDomains() {
+  const gap = 0.014;
+  const totalW = PANELS.reduce((a, p) => a + p.weight, 0);
+  const avail  = 1 - gap * (PANELS.length - 1);
+  const domains = [];
+  let top = 1;
+  for (const p of PANELS) {
+    const h = avail * p.weight / totalW;
+    domains.push([top - h, top]);
+    top -= h + gap;
+  }
+  return domains;   // index 0 = top panel
+}
+
+function renderChart() {
+  const dates = dash.dates, s = dash.series;
+  const dom = panelDomains();
+  const line = (color, w=1.3) => ({color, width: w});
+
+  // axis ids per panel: [primary, secondary?]
+  // p0:y1  p1:y2/y3  p2:y4/y5  p3:y6  p4:y7/y8  p5:y9/y10  p6:y11
+  const traces = [
+    { x: dates, y: dash.index.close, yaxis: 'y1', name: dash.index.symbol,
+      mode: 'lines', line: line(C.accent, 1.6) },
+
+    { x: dates, y: s.ad_line,     yaxis: 'y2', name: 'A-D line',     mode: 'lines', line: line(C.ink) },
+    { x: dates, y: s.ad_vol_line, yaxis: 'y3', name: 'A-D vol line', mode: 'lines', line: line(C.blue, 1) },
+
+    { x: dates, y: s.mcclellan, yaxis: 'y4', name: 'McClellan', mode: 'lines', line: line(C.accent, 1.1) },
+    { x: dates, y: s.summation, yaxis: 'y5', name: 'Summation', mode: 'lines', line: line(C.green, 1.4) },
+
+    { x: dates, y: s.pct_above_20,  yaxis: 'y6', name: '>20d',  mode: 'lines', line: line(C.blue, 1) },
+    { x: dates, y: s.pct_above_50,  yaxis: 'y6', name: '>50d',  mode: 'lines', line: line(C.accent, 1.1) },
+    { x: dates, y: s.pct_above_200, yaxis: 'y6', name: '>200d', mode: 'lines', line: line(C.green, 1.4) },
+
+    { x: dates, y: s.trin,         yaxis: 'y7', name: 'TRIN',    mode: 'lines', line: line(C.red, 1) },
+    { x: dates, y: s.ud_vol_ratio, yaxis: 'y8', name: 'U/D vol', mode: 'lines', line: line(C.teal, 1) },
+
+    { x: dates, y: s.nh_nl,    yaxis: 'y9',  name: 'NH−NL',    type: 'bar', marker: {color: C.dim}, opacity: 0.55 },
+    { x: dates, y: s.hl_index, yaxis: 'y10', name: 'H-L index', mode: 'lines', line: line(C.accent, 1.1) },
+  ];
+
+  if (dash.concentration && dash.concentration.ratio) {
+    traces.push({ x: dates, y: dash.concentration.ratio, yaxis: 'y11',
+                  name: dash.concentration.label, mode: 'lines', line: line(C.purple, 1.2) });
+    PANELS[6].title = `CONCENTRATION — ${dash.concentration.label} (rising = broad, falling = top-heavy)`;
+  }
+  PANELS[0].title = `${dash.index.symbol} · divergence flags`;
+
+  // divergence + ZBT markers on the price panel
+  const closeAt = {};
+  dates.forEach((d, i) => closeAt[d] = dash.index.close[i]);
+  const mark = (events, sym, color, dy) => ({
+    x: events.map(e => e.date),
+    y: events.map(e => (closeAt[e.date] ?? null) === null ? null : closeAt[e.date] * dy),
+    yaxis: 'y1', mode: 'markers', name: '',
+    marker: { symbol: sym, size: 9, color },
+    text: events.map(e => e.detail), hoverinfo: 'x+text',
+  });
+  const bear = dash.divergences.filter(e => e.kind === 'bearish');
+  const bull = dash.divergences.filter(e => e.kind === 'bullish');
+  if (bear.length) traces.push(mark(bear, 'triangle-down', C.red, 1.012));
+  if (bull.length) traces.push(mark(bull, 'triangle-up', C.green, 0.988));
+  if (dash.zbt_events.length)
+    traces.push(mark(dash.zbt_events.map(d => ({date: d, detail: 'Zweig Breadth Thrust'})),
+                     'diamond', C.green, 0.97));
+
+  const axisBase = {
+    gridcolor: C.grid, zerolinecolor: C.grid, tickfont: {size: 9, color: C.dim},
+    automargin: false,
+  };
+  const layout = {
+    paper_bgcolor: 'rgba(0,0,0,0)',
+    plot_bgcolor: '#0f1521',
+    font: {family: 'Spline Sans Mono, monospace', size: 10, color: C.dim},
+    margin: {l: 58, r: 58, t: 16, b: 30},
+    height: 1180,
+    showlegend: false,
+    hovermode: 'x',
+    bargap: 0,
+    xaxis: {
+      ...axisBase, type: 'date', anchor: 'y11',
+      rangebreaks: [{bounds: ['sat', 'mon']}],
+      showspikes: true, spikemode: 'across', spikecolor: C.dim,
+      spikethickness: 1, spikedash: 'dot',
+      range: initialRange(),
+    },
+    yaxis:   {...axisBase, domain: dom[0]},
+    yaxis2:  {...axisBase, domain: dom[1]},
+    yaxis3:  {...axisBase, overlaying: 'y2', side: 'right', showgrid: false},
+    yaxis4:  {...axisBase, domain: dom[2], zerolinecolor: 'rgba(196,206,222,0.3)'},
+    yaxis5:  {...axisBase, overlaying: 'y4', side: 'right', showgrid: false},
+    yaxis6:  {...axisBase, domain: dom[3], range: [0, 100]},
+    yaxis7:  {...axisBase, domain: dom[4], range: [0, 3]},
+    yaxis8:  {...axisBase, overlaying: 'y7', side: 'right', showgrid: false},
+    yaxis9:  {...axisBase, domain: dom[5]},
+    yaxis10: {...axisBase, overlaying: 'y9', side: 'right', showgrid: false, range: [0, 100]},
+    yaxis11: {...axisBase, domain: dom[6]},
+    shapes: [
+      hline(50, 'y6'), hline(1.0, 'y7'), hline(0, 'y9'),
+    ],
+    annotations: PANELS.map((p, i) => ({
+      text: p.title, xref: 'paper', yref: 'paper',
+      x: 0.003, y: dom[i][1], xanchor: 'left', yanchor: 'bottom',
+      showarrow: false, font: {size: 9, color: C.dim},
+    })),
+  };
+
+  Plotly.newPlot('chart', traces, layout, {
+    displaylogo: false, responsive: true,
+    modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+  });
+}
+
+function hline(y, yref) {
+  return { type: 'line', xref: 'paper', x0: 0, x1: 1, yref, y0: y, y1: y,
+           line: {color: 'rgba(196,206,222,0.22)', width: 1, dash: 'dot'} };
+}
+
+function initialRange() {
+  const dates = dash.dates;
+  const n = Math.min(rangeDays, dates.length);
+  return [dates[dates.length - n], dates[dates.length - 1]];
+}
+
+document.getElementById('range-toggle').addEventListener('click', (ev) => {
+  const b = ev.target.closest('button');
+  if (!b) return;
+  document.querySelectorAll('#range-toggle button').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  rangeDays = parseInt(b.dataset.days, 10);
+  if (dash && !dash.empty) Plotly.relayout('chart', {'xaxis.range': initialRange()});
+});
+
+// ---------------------------------------------------------------------------
+// Sync + progress
+// ---------------------------------------------------------------------------
+
+async function startSync() {
+  const r = await fetch('/api/breadth/sync', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({universe: current}),
+  });
+  const d = await r.json();
+  if (!d.ok) {
+    document.getElementById('progress-text').textContent = d.message;
+  }
+  pollProgress();
+}
+
+document.getElementById('sync-btn').onclick = startSync;
+document.getElementById('backfill-btn').onclick = startSync;
+
+async function pollProgress() {
+  clearTimeout(pollTimer);
+  const r = await fetch('/api/breadth/progress');
+  const p = await r.json();
+  const wrap = document.getElementById('progress-wrap');
+  const syncBtn = document.getElementById('sync-btn');
+  const bfBtn = document.getElementById('backfill-btn');
+  if (p.state === 'running') {
+    wrap.classList.add('show');
+    syncBtn.disabled = true;
+    bfBtn.disabled = true;
+    const pct = p.total ? Math.round(100 * p.done / p.total) : 0;
+    document.getElementById('progress-fill').style.width = pct + '%';
+    const eta = p.eta_seconds != null ? ` · ~${Math.ceil(p.eta_seconds / 60)} min left` : '';
+    document.getElementById('progress-text').textContent =
+      `${p.universe} (${p.source ?? '…'}): ${p.done}/${p.total}${eta} — ${p.message}`;
+    pollTimer = setTimeout(pollProgress, 2500);
+  } else {
+    syncBtn.disabled = false;
+    bfBtn.disabled = false;
+    if (p.state === 'done' || p.state === 'error') {
+      document.getElementById('progress-text').textContent = `${p.universe ?? ''}: ${p.message}`;
+      if (p.state === 'done' && p.universe) {
+        wrap.classList.remove('show');
+        await loadUniverses();
+        if (p.universe === current) await loadDashboard();
+      } else if (p.state === 'error') {
+        wrap.classList.add('show');
+        document.getElementById('progress-fill').style.width = '0%';
+      }
+    } else {
+      wrap.classList.remove('show');
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+
+(async function init() {
+  await loadUniverses();
+  await loadDashboard();
+  pollProgress();   // pick up any job already running
+})();
+</script>
+
+</body>
+</html>

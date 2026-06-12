@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Market Intelligence Harness</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0e14;
+    --panel: #111722;
+    --grid: #1c2533;
+    --ink: #e6edf3;
+    --dim: #8b94a3;
+    --accent: #ffb000;
+    --green: #2fbf8f;
+    --red: #e4596b;
+    --blue: #5b8dd9;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Spline Sans Mono', monospace;
+    min-height: 100vh;
+    padding: 40px 28px;
+    max-width: 1100px;
+    margin: 0 auto;
+    background-image: radial-gradient(circle at 20% 0%, rgba(255,176,0,0.05), transparent 40%);
+  }
+
+  header { margin-bottom: 34px; }
+
+  h1 {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 800;
+    font-size: 36px;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  h1 .sub {
+    display: block;
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--dim);
+    letter-spacing: 0.08em;
+    margin-top: 8px;
+    text-transform: uppercase;
+  }
+
+  .section-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--dim);
+    margin: 26px 0 12px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+    gap: 14px;
+  }
+
+  .card {
+    display: block;
+    background: var(--panel);
+    border: 1px solid var(--grid);
+    border-radius: 12px;
+    padding: 20px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: border-color 0.15s, transform 0.15s;
+    position: relative;
+  }
+  .card:hover { border-color: var(--accent); transform: translateY(-2px); }
+
+  .card h2 {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-weight: 600;
+    font-size: 19px;
+    margin-bottom: 6px;
+  }
+  .card p {
+    font-size: 11.5px;
+    color: var(--dim);
+    line-height: 1.55;
+    margin-bottom: 14px;
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    padding: 4px 10px;
+    border-radius: 6px;
+    background: var(--grid);
+    color: var(--dim);
+  }
+  .badge.healthy       { background: rgba(47,191,143,0.16); color: var(--green); }
+  .badge.neutral       { background: rgba(91,141,217,0.16); color: var(--blue); }
+  .badge.deteriorating { background: rgba(228,89,107,0.16); color: var(--red); }
+  .badge.accent        { background: rgba(255,176,0,0.14);  color: var(--accent); }
+
+  .card.planned {
+    opacity: 0.45;
+    pointer-events: none;
+    border-style: dashed;
+  }
+  .card.planned .badge { background: var(--grid); color: var(--dim); }
+
+  footer {
+    margin-top: 40px;
+    font-size: 10px;
+    color: var(--dim);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Market Intelligence Harness<span class="sub">Module hub · investment &amp; trading signals</span></h1>
+</header>
+
+<div class="section-label">Live Modules</div>
+<div class="grid">
+
+  <a class="card" href="/rrg.html">
+    <h2>Relative Rotation Graph</h2>
+    <p>Sector rotation vs SPY — JdK-style RS-Ratio / RS-Momentum with Elliott-wave phase model. ROTATE IN/OUT calls per sector.</p>
+    <span class="badge" id="rrg-badge">loading…</span>
+  </a>
+
+  <a class="card" href="/breadth.html">
+    <h2>Market Breadth</h2>
+    <p>Is the broad market participating, or is it a handful of large stocks? McClellan, A-D lines, % above MAs, regime state &amp; divergences.</p>
+    <span class="badge" id="breadth-badge">loading…</span>
+  </a>
+
+  <a class="card" href="/schwab.html">
+    <h2>Schwab Account</h2>
+    <p>Live positions enriched with RRG-derived sector signals — BUY / HOLD / SELL action flags per holding.</p>
+    <span class="badge" id="schwab-badge">loading…</span>
+  </a>
+
+</div>
+
+<div class="section-label">Planned</div>
+<div class="grid">
+
+  <div class="card planned">
+    <h2>Sub-Industry Trackers</h2>
+    <p>RRG-style views for software, space, and semiconductor sub-industries.</p>
+    <span class="badge">planned</span>
+  </div>
+
+  <div class="card planned">
+    <h2>News &amp; Macro Events</h2>
+    <p>Headline feed, economic calendar, FOMC dates.</p>
+    <span class="badge">planned</span>
+  </div>
+
+  <div class="card planned">
+    <h2>JPM Collar Tracker</h2>
+    <p>Quarterly JPM collar strikes and expiry.</p>
+    <span class="badge">planned</span>
+  </div>
+
+  <div class="card planned">
+    <h2>Fed Rate Probabilities</h2>
+    <p>Rate cut/hike odds from fed funds futures.</p>
+    <span class="badge">planned</span>
+  </div>
+
+  <div class="card planned">
+    <h2>AI Subagents</h2>
+    <p>One Claude subagent per data module, unified by a master harness agent.</p>
+    <span class="badge">planned</span>
+  </div>
+
+</div>
+
+<footer>Free data sources · local only · not investment advice</footer>
+
+<script>
+// Each badge loads independently and fails soft — the page never blocks on an API.
+
+async function loadBreadthBadge() {
+  const el = document.getElementById('breadth-badge');
+  try {
+    const r = await fetch('/api/breadth/summary');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    const regime = (d.regime || '').toUpperCase();
+    if (!regime) throw new Error();
+    el.textContent = regime;
+    el.className = 'badge ' + regime.toLowerCase();
+  } catch {
+    el.textContent = 'no data';
+    el.className = 'badge';
+  }
+}
+
+async function loadRrgBadge() {
+  const el = document.getElementById('rrg-badge');
+  try {
+    const r = await fetch('/api/rrg');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    const ins = Object.entries(d.sectors || {})
+      .filter(([, s]) => s.call === 'ROTATE IN')
+      .map(([t]) => t);
+    if (ins.length) {
+      el.textContent = 'IN: ' + ins.join(' ');
+      el.className = 'badge accent';
+    } else if (d.best) {
+      el.textContent = 'top: ' + d.best.ticker;
+      el.className = 'badge';
+    } else {
+      throw new Error();
+    }
+  } catch {
+    el.textContent = 'no data';
+    el.className = 'badge';
+  }
+}
+
+async function loadSchwabBadge() {
+  const el = document.getElementById('schwab-badge');
+  try {
+    const r = await fetch('/api/schwab/status');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    if (d.has_token && !d.token_expired) {
+      el.textContent = 'connected';
+      el.className = 'badge healthy';
+    } else if (d.has_refresh) {
+      el.textContent = 'token refresh pending';
+      el.className = 'badge neutral';
+    } else {
+      el.textContent = 'not connected';
+      el.className = 'badge';
+    }
+  } catch {
+    el.textContent = 'unavailable';
+    el.className = 'badge';
+  }
+}
+
+loadBreadthBadge();
+loadRrgBadge();
+loadSchwabBadge();
+</script>
+
+</body>
+</html>

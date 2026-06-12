@@ -177,6 +177,15 @@ def _valid_token():
     })
     return d["access_token"]
 
+
+def get_access_token():
+    """Public token accessor for other modules (e.g. breadth market data).
+
+    Returns a live access token, auto-refreshing if expired. Raises ValueError
+    if the OAuth flow has never been completed.
+    """
+    return _valid_token()
+
 # ---------------------------------------------------------------------------
 # Sector lookup
 # ---------------------------------------------------------------------------

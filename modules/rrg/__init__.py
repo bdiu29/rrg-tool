@@ -2,8 +2,8 @@
 RRG module — Relative Rotation Graph for SPDR sector ETFs.
 
 Routes registered:
-  GET /           → index.html
-  GET /index.html → index.html
+  GET /rrg.html   → index.html
+  GET /index.html → index.html (legacy alias)
   GET /api/rrg    → JSON sector rotation data
 """
 
@@ -290,16 +290,12 @@ def _fetch_close(symbols, interval, period):
     hit = _PRICE_CACHE.get(key)
     if hit and time.time() - hit[0] < _PRICE_TTL:
         return hit[1]
-    # yfinance has no native 2h bars — fetch 60m and resample below.
-    yf_interval = "60m" if interval in ("1h", "2h") else interval
     raw = yf.download(
-        symbols, period=period, interval=yf_interval,
+        symbols, period=period, interval=interval,
         auto_adjust=True, progress=False, group_by="column",
     )
     close = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw.to_frame()
     close = close.dropna(how="all").ffill()
-    if interval == "2h":
-        close = close.resample("2h").last().dropna(how="all")
     _PRICE_CACHE[key] = (time.time(), close)
     return close
 
@@ -329,20 +325,16 @@ def compute_rrg(tickers, benchmark, interval, tail=6, rs_window=None, mom_window
         trend_len    = TREND_W
         period       = "3y"
     else:
-        # Daily & intraday — 50/140 trading-day macro lens, DIRECT-scaled
-        # rather than z-normalized; see RATIO_K_D note above. Intraday (1h/2h)
-        # is the same lens at finer bar resolution — a debug view with a
-        # smoothly-updating head, not a faster story. Windows are in trading
-        # days, converted to bars here. mom_smooth is deliberately LIGHT:
-        # momentum must lead the ratio for leaders to arc over the top of the
-        # oval (heavy smoothing = lag = straight diagonal tails, no rollover).
-        bpd = {"1d": 1.0, "2h": 3.25, "1h": 6.5}[interval]   # bars per trading day
-        smooth     = smooth     or max(2, round(50 * bpd))   # fast EMA (≈10 weeks)
-        rs_window  = rs_window  or max(3, round(140 * bpd))  # slow EMA (≈28 weeks)
-        mom_diff   = max(1, round(15 * bpd))                  # 3-week ROC of the RS trend
-        mom_smooth = max(2, round(3 * bpd))                   # 3-day EMA on the ROC
-        trend_len  = max(1, round(TREND_D * bpd))
-        period     = "3y" if interval == "1d" else "730d"     # yfinance 60m history limit
+        # Daily — 50/140 trading-day macro lens, DIRECT-scaled rather than
+        # z-normalized; see RATIO_K_D note above. mom_smooth is deliberately
+        # LIGHT: momentum must lead the ratio for leaders to arc over the top of
+        # the oval (heavy smoothing = lag = straight diagonal tails, no rollover).
+        smooth       = smooth     or 50   # fast EMA span (≈10 weeks)
+        rs_window    = rs_window  or 140  # slow EMA span (≈28 weeks)
+        mom_diff     = 15                 # 3-week ROC of the RS trend
+        mom_smooth   = 3                  # 3-day EMA on the ROC
+        trend_len    = TREND_D
+        period       = "3y"
 
     symbols = tickers + [benchmark]
     close   = _fetch_close(symbols, interval, period)
@@ -390,11 +382,6 @@ def compute_rrg(tickers, benchmark, interval, tail=6, rs_window=None, mom_window
             # last bar is the live head.
             iso_week = df_all.index.strftime("%G-%V")
             df_all   = df_all.groupby(iso_week, sort=False).tail(1)
-        elif interval in ("1h", "2h"):
-            # Intraday debug view: one tail point per trading day (last bar of
-            # each session); the newest (partial) day's last bar is the head.
-            day    = df_all.index.strftime("%Y-%m-%d")
-            df_all = df_all.groupby(day, sort=False).tail(1)
         df = df_all.tail(tail)
         if df.empty:
             continue
@@ -473,8 +460,8 @@ def _handle_index(req):
 
 
 def _handle_rrg(req):
-    timeframe = req.qs.get("timeframe", ["weekly"])[0]
-    interval = {"weekly": "1wk", "daily": "1d", "2h": "2h", "1h": "1h"}.get(timeframe, "1wk")
+    timeframe = req.qs.get("timeframe", ["daily"])[0]
+    interval = "1wk" if timeframe == "weekly" else "1d"
     tail     = int(req.qs.get("tail", ["6"])[0])
     tail     = max(3, min(tail, 14))
     asof     = req.qs.get("asof", [""])[0].strip() or None
@@ -500,6 +487,6 @@ def _handle_rrg(req):
 
 
 def register_routes(router):
-    router.get("/",           _handle_index)
-    router.get("/index.html", _handle_index)
+    router.get("/rrg.html",   _handle_index)
+    router.get("/index.html", _handle_index)   # legacy alias
     router.get("/api/rrg",    _handle_rrg)

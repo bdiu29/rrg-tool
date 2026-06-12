@@ -380,21 +380,24 @@
     .layout { grid-template-columns: 1fr; }
   }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
   <header>
     <div>
-      <a href="/schwab.html" class="nav-link">Schwab Account →</a>
+      <div>
+        <a href="/" class="nav-link">← Home</a>
+        <a href="/breadth.html" class="nav-link" style="margin-left:14px">Breadth →</a>
+        <a href="/schwab.html" class="nav-link" style="margin-left:14px">Schwab →</a>
+      </div>
       <h1>Relative Rotation Graph<span class="sub">Sector rotation vs <span id="bench">SPY</span></span></h1>
     </div>
     <div class="controls">
       <div class="ctl">
         <span class="ctl-label">Timeframe</span>
         <div class="toggle" id="tf-toggle">
-          <button data-tf="weekly" class="active">Weekly</button>
-          <button data-tf="daily">Daily</button>
-          <button data-tf="2h">2H</button>
-          <button data-tf="1h">1H</button>
+          <button data-tf="weekly">Weekly</button>
+          <button data-tf="daily" class="active">Daily</button>
         </div>
       </div>
       <div class="ctl">
@@ -440,7 +443,7 @@
     </aside>
   </div>
 
-  <div class="bars-panel">
+  <div class="bars-panel" id="bars-panel">
     <div class="bars-head">
       <h2 id="bars-title">Today vs SPY</h2>
       <div style="display:flex; align-items:center; gap:12px;">
@@ -451,7 +454,7 @@
     <div id="bars"></div>
   </div>
 
-  <div class="calls-panel">
+  <div class="calls-panel" id="calls-panel">
     <div class="calls-head">
       <h2>Rotation Calls</h2>
       <button class="copy-btn" id="copy-calls">Copy</button>
@@ -489,7 +492,7 @@ const SECTOR_COLORS = {
 };
 const colorFor = (t) => SECTOR_COLORS[t] || '#7c8694';
 const NS = 'http://www.w3.org/2000/svg';
-let currentTF = 'weekly';
+let currentTF = 'daily';
 let currentTail = 6;
 let currentAsof = null;   // 'YYYY-MM-DD' when rolled back, null = live
 let muted = new Set();
@@ -559,7 +562,7 @@ function render(data) {
   let yHi = Math.max(106, Math.ceil(yMax / yStep) * yStep);
 
   const W = 600, H = 600;
-  const M = { l: 54, r: 24, t: 26, b: 44 };          // plot margins
+  const M = { l: 54, r: 24, t: 42, b: 44 };          // plot margins (top leaves room for the lens label)
   const PL = M.l, PR = W - M.r, PT = M.t, PB = H - M.b;
   const sx = v => PL + (v - xLo) / (xHi - xLo) * (PR - PL);
   const sy = v => PB - (v - yLo) / (yHi - yLo) * (PB - PT);
@@ -617,15 +620,11 @@ function render(data) {
     tx.textContent = l.t; svg.appendChild(tx);
   });
 
-  // Timeframe watermark — drawn into the SVG so it lands in Copy exports
-  // and screenshots are self-identifying. Sits a line below the corner
-  // quadrant labels so long "as of" text can't collide with them.
-  const LENS_TEXT = {
-    weekly: 'WEEKLY · 10/40w', daily: 'DAILY · 50/140d',
-    '2h': '2H · 50/140d lens', '1h': '1H · 50/140d lens',
-  };
+  // Timeframe lens label — drawn into the SVG (above the plot area) so it lands
+  // in Copy exports and screenshots are self-identifying.
+  const LENS_TEXT = { weekly: 'WEEKLY · 10/40w', daily: 'DAILY · 50/140d' };
   const lens = LENS_TEXT[data.timeframe] || data.timeframe.toUpperCase();
-  const wm = el('text', { x: (PL + PR) / 2, y: PT + 36, fill: 'var(--dim)', 'text-anchor': 'middle', 'font-size': 11, 'letter-spacing': '2' });
+  const wm = el('text', { x: (PL + PR) / 2, y: 20, fill: 'var(--dim)', 'text-anchor': 'middle', 'font-size': 11, 'letter-spacing': '2' });
   wm.textContent = lens + (data.asof ? ` · as of ${data.date}` : '');
   svg.appendChild(wm);
 
@@ -995,106 +994,24 @@ function copyChartImage(btn) {
   img.src = url;
 }
 
-// Bar chart: redraw the diverging bars onto a canvas (HTML can't be copied directly).
-function copyBarsImage(btn) {
-  if (!lastData) return;
-  const s = lastData.sectors;
-  const rows = Object.keys(s)
-    .map(k => ({ k, val: s[k].rel_pct }))
-    .filter(r => typeof r.val === 'number')
-    .sort((a, b) => b.val - a.val);
-  if (!rows.length) return;
-
-  const scale = 2, W = 720, pad = 22, headerH = 50, rowH = 30;
-  const H = headerH + rows.length * rowH + pad;
-  const canvas = document.createElement('canvas');
-  canvas.width = W * scale; canvas.height = H * scale;
-  const ctx = canvas.getContext('2d');
-  ctx.scale(scale, scale);
-  ctx.fillStyle = '#111722'; ctx.fillRect(0, 0, W, H);
-
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#8b94a3'; ctx.font = "600 13px 'Spline Sans Mono', monospace";
-  ctx.textAlign = 'left';
-  ctx.fillText((lastData.timeframe === 'weekly' ? 'THIS WEEK VS SPY' : 'TODAY VS SPY'), pad, 26);
-  ctx.fillStyle = '#4d5663'; ctx.textAlign = 'right';
-  ctx.fillText(lastData.date || '', W - pad, 26);
-
-  const barLeft = pad + 48, barRight = W - pad - 64, trackW = barRight - barLeft, cxp = barLeft + trackW / 2;
-  const maxAbs = Math.max(0.1, ...rows.map(r => Math.abs(r.val)));
-
-  rows.forEach((r, i) => {
-    const y = headerH + i * rowH + rowH / 2;
-    const pos = r.val >= 0;
-    const bw = Math.abs(r.val) / maxAbs * (trackW / 2);
-    // zero line
-    ctx.strokeStyle = '#1c2533'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cxp, y - 11); ctx.lineTo(cxp, y + 11); ctx.stroke();
-    // bar
-    ctx.fillStyle = pos ? '#2f9e5b' : '#9e3a3a';
-    const bx = pos ? cxp : cxp - bw;
-    roundRect(ctx, bx, y - 8, bw, 16, 3); ctx.fill();
-    // ticker
-    ctx.fillStyle = colorFor(r.k); ctx.font = "700 12px 'Spline Sans Mono', monospace";
-    ctx.textAlign = 'left'; ctx.fillText(r.k, pad, y);
-    // value
-    ctx.fillStyle = pos ? '#3ddc84' : '#ff5c5c';
-    ctx.textAlign = 'right';
-    ctx.fillText((pos ? '+' : '') + r.val.toFixed(2) + '%', W - pad, y);
-  });
-
-  canvas.toBlob(b => writeImage(b, btn));
-}
-
-function roundRect(ctx, x, y, w, h, r) {
-  if (w < 0) { x += w; w = -w; }
-  r = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-}
-
-function copyCallsText(btn) {
-  if (!lastData) return;
-  const s  = lastData.sectors;
-  const tf = lastData.timeframe === 'weekly' ? 'Weekly' : 'Daily';
-
-  const buckets = { 'ROTATE IN': [], 'ROTATE OUT': [], 'HOLD': [], 'WATCH': [], 'AVOID': [] };
-  Object.entries(s).forEach(([k, d]) => {
-    const score = (d.call === 'ROTATE IN' || d.call === 'HOLD') ? d.accum : d.distrib;
-    const label = (d.call === 'ROTATE IN' || d.call === 'HOLD') ? 'Accum' : 'Dist ';
-    buckets[d.call]?.push({ k, score, line: `  ${k.padEnd(5)} ${d.name.padEnd(22)} ${(d.heading_arrow||'·').padEnd(2)} ${(d.heading||'flat').padEnd(4)} ${label} ${String(score).padStart(3)}  [${d.phase || '—'}] ${d.call_why}` });
-  });
-
-  let text = `RRG Rotation Calls — ${tf} · ${lastData.date || ''}\n\n`;
-  const section = (arrow, call) => {
-    const rows = buckets[call];
-    if (!rows.length) return;
-    text += `${arrow} ${call}\n`;
-    rows.sort((a, b) => b.score - a.score).forEach(r => text += r.line + '\n');
-    text += '\n';
-  };
-  section('↗', 'ROTATE IN');
-  section('↘', 'ROTATE OUT');
-  ['HOLD', 'WATCH', 'AVOID'].forEach(call => {
-    buckets[call].sort((a, b) => b.score - a.score).forEach(r =>
-      text += `[${call.padEnd(10)}]${r.line.trimStart()}\n`
-    );
-  });
-
-  navigator.clipboard.writeText(text.trim()).then(
-    ()  => flashBtn(btn, 'Copied ✓'),
-    ()  => flashBtn(btn, 'Failed'),
-  );
+// Screenshot any widget element to the clipboard via html2canvas. Skips the
+// copy button itself so it doesn't appear in the capture.
+function copyWidget(elId, btn) {
+  const node = $(elId);
+  if (!node || typeof html2canvas !== 'function') { flashBtn(btn, 'Copy failed'); return; }
+  html2canvas(node, {
+    backgroundColor: '#0a0e14',
+    scale: 2,
+    logging: false,
+    ignoreElements: (el) => el.classList && el.classList.contains('copy-btn'),
+  })
+    .then(canvas => canvas.toBlob(b => writeImage(b, btn)))
+    .catch(() => flashBtn(btn, 'Copy failed'));
 }
 
 $('copy-chart').addEventListener('click', (e) => copyChartImage(e.currentTarget));
-$('copy-bars').addEventListener('click',  (e) => copyBarsImage(e.currentTarget));
-$('copy-calls').addEventListener('click', (e) => copyCallsText(e.currentTarget));
+$('copy-bars').addEventListener('click',  (e) => copyWidget('bars-panel', e.currentTarget));
+$('copy-calls').addEventListener('click', (e) => copyWidget('calls-panel', e.currentTarget));
 
 load();
 </script>

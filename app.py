@@ -8,12 +8,14 @@ function. To add a new module, create the folder and call register_routes here.
 
 import json
 import os
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 from modules import Response
+from modules.home import register_routes as register_home
 from modules.rrg import register_routes as register_rrg
 from modules.schwab import register_routes as register_schwab
+from modules.breadth import register_routes as register_breadth
 
 
 # ---------------------------------------------------------------------------
@@ -63,8 +65,10 @@ class Router:
 # ---------------------------------------------------------------------------
 
 router = Router()
+register_home(router)
 register_rrg(router)
 register_schwab(router)
+register_breadth(router)
 
 
 # ---------------------------------------------------------------------------
@@ -110,9 +114,9 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     port   = int(os.environ.get("PORT", "8000"))
-    server = HTTPServer(("127.0.0.1", port), Handler)
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     print(f"\n  Market Intelligence Harness →  http://localhost:{port}")
-    print("  RRG: /   ·   Schwab: /schwab.html\n")
+    print("  Hub: /   ·   RRG: /rrg.html   ·   Breadth: /breadth.html   ·   Schwab: /schwab.html\n")
     print("  Press Ctrl+C to stop.\n")
     try:
         server.serve_forever()

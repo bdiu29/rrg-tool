@@ -4,7 +4,9 @@ A personal market intelligence platform that runs entirely on your Mac.
 A tiny Python server fetches data and serves an interactive dashboard at `localhost` — no cloud, no subscriptions, no API fees for the core data.
 
 **Current modules:**
+- **Home** — hub page linking every module, with live status badges
 - **RRG** — Interactive Relative Rotation Graph for sector ETFs
+- **Breadth** — Market breadth tracker: McClellan, A-D lines, % above MAs, regime state & divergences across swappable universes (S&P 500 / NYSE / Nasdaq)
 - **Schwab** — Account positions enriched with daily sector rotation signals
 
 <p align="center">
@@ -50,7 +52,9 @@ Then open **http://localhost:8000** in your browser.
 
 | Page | URL |
 |---|---|
-| RRG — Sector Rotation | http://localhost:8000/ |
+| Home — Module Hub | http://localhost:8000/ |
+| RRG — Sector Rotation | http://localhost:8000/rrg.html |
+| Breadth — Market Breadth | http://localhost:8000/breadth.html |
 | Schwab — Account Positions | http://localhost:8000/schwab.html |
 
 Press `Ctrl+C` in the terminal to stop.
@@ -118,6 +122,61 @@ Tail direction and length are the primary read. A sector heading northeast with 
 The default universe is the 11 SPDR Select Sector ETFs (XLK, XLE, XLV, XLF, XLY, XLP, XLI, XLB, XLU, XLRE, XLC), benchmarked against SPY. To change them, edit `DEFAULT_TICKERS` and `BENCHMARK` near the top of `modules/rrg/__init__.py`. Per-sector colors live in `SECTOR_COLORS` inside `modules/rrg/index.html`.
 
 If the cloud looks too small or too large in the chart frame, adjust `RATIO_SCALE` / `MOM_SCALE` in the same file.
+
+---
+
+## Breadth — Market Breadth Tracker
+
+Answers one question continuously: **is the broad market participating in a move, or is it being carried by a handful of large stocks?** Designed for short-term S&P timing (SPY/ES), with long-term breadth as a regime layer that colors how the short-term signals are read — breadth is always shown against index price on a shared time axis, because breadth in isolation is close to useless.
+
+<p align="center">
+  <img src="assets/breadth.png" alt="Market breadth dashboard — regime banner, metrics, and stacked breadth panels against SPY" width="800"/>
+</p>
+
+### Regime banner
+
+The top of the dashboard states the current regime, derived from the long-term panel:
+
+| Regime | Meaning |
+|---|---|
+| **HEALTHY** | Summation Index positive *and* rising *and* >60% of stocks above their 200d MA — oversold readings are buy-the-dip setups, can size up |
+| **NEUTRAL** | Mixed long-term panel — wait for confirmation |
+| **DETERIORATING** | Narrow market (<50% above 200d), falling Summation, or active divergences — the same oversold readings get faded, smaller size, tighter stops |
+
+**Divergence flags** are discrete dated events (not just lines): the index making a fresh ~quarterly high while the A-D line or % above 50d/20d MA fails to confirm raises a bearish flag (bullish mirror at lows). Active flags subtract from the regime score and are marked on the price panel.
+
+### Panels (shared time axis)
+
+1. **Index price** with divergence markers and Zweig Breadth Thrust events
+2. **Cumulative A-D line** + A-D volume line
+3. **McClellan Oscillator** (ratio-adjusted) + Summation Index
+4. **% of stocks above 20/50/200-day MA**
+5. **TRIN (Arms Index)** + up/down volume ratio
+6. **52-week new highs − new lows** + High-Low Index
+7. **Concentration gauge** — RSP/SPY ratio (equal-weight vs cap-weight; falling = top-heavy market)
+
+### Universes
+
+Swappable at runtime via the buttons in the header: **S&P 500** (Wikipedia constituents), **NYSE** and **Nasdaq** (nasdaqtrader.com listings, common stock only). Universes are defined in `modules/breadth/universes.json` — adding Russell 2000 or S&P 600 is a config entry (generic CSV fetcher included), no code changes.
+
+**Survivorship caveat (important):** universes are built from *today's* constituent lists, so deep historical breadth is biased upward — delisted losers are missing. Recent readings are reliable; treat multi-year history as approximate. Membership is stored dated so point-in-time lists can be imported later.
+
+### Data & backfill
+
+- Prices come from the **Schwab Market Data API** by default (free with your existing developer app; the OAuth tokens from the Schwab module are reused), with **yfinance as automatic fallback** when Schwab isn't connected. Adapters are pluggable (`modules/breadth/datasource.py`).
+- Everything lands in a local **SQLite store** (`modules/breadth/data/breadth.db`); indicators always compute from local data, never by re-pulling history.
+- The first backfill per universe pulls 3 years of daily bars — ~5 min for the S&P 500, 20–40 min for NYSE/Nasdaq via Schwab (rate-limited to stay under 120 requests/min). It runs in the background with a progress bar, is **resumable** (interrupt and re-run — already-synced symbols are skipped), and subsequent updates are incremental.
+- **Math note:** the McClellan Oscillator/Summation are *ratio-adjusted* (1000·(adv−dec)/(adv+dec)) so readings are comparable across a 500-stock and a 3,000-stock universe. The Bullish Percent Index is stubbed — it needs a point-&-figure signal engine.
+
+### Daily summary CLI
+
+```bash
+python3 -m modules.breadth.cli            # S&P 500 summary
+python3 -m modules.breadth.cli nasdaq     # another universe
+python3 -m modules.breadth.cli --json     # machine-readable
+```
+
+Prints the current regime with reasons, short-term extremes interpreted *through* the regime, and any active divergence flags.
 
 ---
 
