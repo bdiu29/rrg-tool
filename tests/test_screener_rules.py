@@ -30,6 +30,26 @@ class TestEvaluateRules(unittest.TestCase):
         self.assertIn("vol_thrust_down", _keys(down))
         self.assertEqual(down[0]["kind"], "dump")
 
+    def test_vol_building_fires_below_thrust_change(self):
+        fire = rules.evaluate_rules({"chg_pct": 0.8, "rvol_10d": 2.0, "close": 10})
+        self.assertIn("vol_building_up", _keys(fire))
+        self.assertEqual(fire[0]["kind"], "pump")
+        down = rules.evaluate_rules({"chg_pct": -1.5, "rvol_10d": 2.5, "close": 10})
+        self.assertIn("vol_building_down", _keys(down))
+        self.assertEqual(down[0]["kind"], "dump")
+        quiet = rules.evaluate_rules({"chg_pct": 0.8, "rvol_10d": 1.9, "close": 10})
+        self.assertNotIn("vol_building_up", _keys(quiet))
+
+    def test_vol_building_and_thrust_are_mutually_exclusive(self):
+        # |chg| at/above the thrust gate → thrust only, never both
+        thrust = rules.evaluate_rules({"chg_pct": 3.0, "rvol_10d": 4.0, "close": 10})
+        self.assertIn("vol_thrust_up", _keys(thrust))
+        self.assertNotIn("vol_building_up", _keys(thrust))
+        # heavy volume but quiet price → building only, even at thrust-level rvol
+        build = rules.evaluate_rules({"chg_pct": 2.9, "rvol_10d": 4.0, "close": 10})
+        self.assertIn("vol_building_up", _keys(build))
+        self.assertNotIn("vol_thrust_up", _keys(build))
+
     def test_rsi_extremes(self):
         self.assertIn("rsi_overbought", _keys(rules.evaluate_rules({"rsi14": 80.0})))
         self.assertIn("rsi_oversold", _keys(rules.evaluate_rules({"rsi14": 20.0})))
@@ -158,7 +178,7 @@ class TestStoreAlertsAndRouting(unittest.TestCase):
         names = [s["name"] for s in store.list_screens()]
         self.assertEqual(sorted(names),
                          ["Approaching Golden Pocket", "Breakout",
-                          "Continuation", "Golden Pocket"])
+                          "Continuation", "Golden Pocket", "Volume Building"])
 
     def test_screen_match_memory(self):
         store.update_screen_matches(1, {"AAA", "BBB"}, "2026-06-11")

@@ -14,6 +14,7 @@ from modules.screener.filters import apply_filters
 
 RVOL_THRUST = 3.0    # rel volume needed for a thrust alert
 CHG_THRUST  = 3.0    # |%change| needed for a thrust alert
+RVOL_BUILD  = 2.0    # rel volume that flags volume building while price is quiet
 RSI_HI      = 80.0
 RSI_LO      = 20.0
 MA_STRETCH  = 15.0   # |% from SMA20| flagged as overextended
@@ -54,6 +55,20 @@ def evaluate_rules(row):
         elif chg <= -CHG_THRUST:
             add("vol_thrust_down", "dump",
                 f"{_fmt(chg)}% on {rvol:.1f}× volume — dump in progress",
+                chg_pct=chg, rvol=rvol)
+
+    # Volume building — heavy tape but price still quiet: volume leads
+    # price, so this is the pre-thrust read. |chg| < CHG_THRUST keeps it
+    # mutually exclusive with the thrust alerts at any instant; distinct
+    # rule keys let a name escalate building → thrust within the same day.
+    if _ok(chg) and _ok(rvol) and rvol >= RVOL_BUILD and abs(chg) < CHG_THRUST:
+        if chg >= 0:
+            add("vol_building_up", "pump",
+                f"{rvol:.1f}× volume, price quiet ({_fmt(chg)}%) — possible accumulation",
+                chg_pct=chg, rvol=rvol)
+        else:
+            add("vol_building_down", "dump",
+                f"{rvol:.1f}× volume, price slipping ({_fmt(chg)}%) — possible distribution",
                 chg_pct=chg, rvol=rvol)
 
     # Technical extremes — exhaustion warnings, kind = reversal direction

@@ -379,8 +379,36 @@
   @media (max-width: 760px) {
     .layout { grid-template-columns: 1fr; }
   }
+
+  /* --- strategy backtest panel --- */
+  .bt-panel { background:var(--panel); border:1px solid var(--grid); border-radius:14px; padding:22px 24px; margin-top:22px; }
+  .bt-head { display:flex; justify-content:space-between; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:4px; }
+  .bt-head h2 { font-family:'Bricolage Grotesque',sans-serif; font-size:15px; text-transform:uppercase; letter-spacing:0.1em; color:var(--ink); font-weight:600; }
+  .bt-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .bt-controls select { background:var(--bg); color:var(--ink); border:1px solid var(--grid); border-radius:7px; padding:6px 9px; font-family:inherit; font-size:11px; }
+  .bt-btn { background:var(--accent); color:#1a1205; border:none; border-radius:7px; padding:6px 13px; font-family:inherit; font-size:11px; font-weight:700; cursor:pointer; letter-spacing:0.03em; }
+  .bt-btn.ghost { background:transparent; color:var(--dim); border:1px solid var(--grid); }
+  .bt-btn:disabled { opacity:0.5; cursor:default; }
+  .bt-sub { font-size:10.5px; color:#5a6472; margin-bottom:14px; line-height:1.45; }
+  .bt-state { font-size:11px; color:var(--dim); padding:14px 2px; }
+  .bt-summary { display:flex; gap:26px; flex-wrap:wrap; margin-bottom:6px; }
+  .bt-stat { display:flex; flex-direction:column; gap:2px; }
+  .bt-stat .v { font-family:'Spline Sans Mono',monospace; font-size:18px; font-weight:600; }
+  .bt-stat .l { font-size:8.5px; color:#5a6472; letter-spacing:0.08em; text-transform:uppercase; }
+  .bt-section-title { font-family:'Bricolage Grotesque',sans-serif; font-size:11px; text-transform:uppercase; letter-spacing:0.1em; color:var(--dim); font-weight:600; margin:18px 0 8px; }
+  .bt-table { width:100%; border-collapse:collapse; font-size:11.5px; }
+  .bt-table th, .bt-table td { text-align:right; padding:5px 8px; border-bottom:1px solid var(--grid); }
+  .bt-table th:first-child, .bt-table td:first-child { text-align:left; }
+  .bt-table th { color:#5a6472; font-weight:600; font-size:9.5px; text-transform:uppercase; letter-spacing:0.05em; }
+  .bt-table td.pos { color:#3ddc84; } .bt-table td.neg { color:#ff5c5c; }
+  .bt-table td.call-in { color:#2ecc71; font-weight:700; } .bt-table td.call-out { color:#e05563; font-weight:700; }
+  .bt-chart { width:100%; height:300px; margin-top:6px; }
+  .bt-note { font-size:10px; color:#5a6472; line-height:1.5; margin-top:10px; }
+  .bt-caveats { font-size:10px; color:#5a6472; line-height:1.5; margin-top:14px; border-top:1px solid var(--grid); padding-top:11px; }
+  .bt-v.pos { color:#3ddc84; } .bt-v.neg { color:#ff5c5c; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 </head>
 <body>
   <header>
@@ -472,6 +500,25 @@
       </div>
     </div>
     <div class="calls-foot">ACCUM = early-upside score · DIST = rolling-over score. Educational only — confirm with price trend, not RRG alone.</div>
+  </div>
+
+  <div class="bt-panel" id="bt-panel">
+    <div class="bt-head">
+      <h2>Strategy Backtest</h2>
+      <div class="bt-controls">
+        <select id="bt-exit" title="Exit model">
+          <option value="signal">Exit on opposing call</option>
+          <option value="hold">Hold 10 bars</option>
+          <option value="atr">ATR 2×/3×</option>
+        </select>
+        <button class="bt-btn" id="bt-run">Run ▸</button>
+        <button class="bt-btn ghost" id="bt-wf">Walk-forward ▸</button>
+        <button class="copy-btn" id="bt-copy" style="position:static">Copy MD</button>
+      </div>
+    </div>
+    <div class="bt-sub">Does the call precede the move? Forward returns by call type — measured from the first bar after the signal is confirmed (no lookahead) — plus an equal-weight equity curve vs SPY. Replays the <b id="bt-tf">daily</b> calls over ~3y. Walk-forward re-tunes the gate params and reports in-sample vs out-of-sample.</div>
+    <div id="bt-state" class="bt-state">Run a backtest to validate the rotation calls over history.</div>
+    <div id="bt-report" style="display:none"></div>
   </div>
 
   <div id="tooltip"></div>
@@ -1013,6 +1060,157 @@ function copyWidget(elId, btn) {
 $('copy-chart').addEventListener('click', (e) => copyChartImage(e.currentTarget));
 $('copy-bars').addEventListener('click',  (e) => copyWidget('bars-panel', e.currentTarget));
 $('copy-calls').addEventListener('click', (e) => copyWidget('calls-panel', e.currentTarget));
+
+// ---- Strategy backtest ----
+let btLast = null;
+const HZ = ['1', '5', '10', '20'];
+const fmtPct  = (v) => v == null ? '—' : (v > 0 ? '+' : '') + (+v).toFixed(2) + '%';
+const signCls = (v) => v == null ? '' : (v > 0 ? 'pos' : (v < 0 ? 'neg' : ''));
+
+async function runBacktest(walkForward) {
+  const runBtn = $('bt-run'), wfBtn = $('bt-wf');
+  runBtn.disabled = wfBtn.disabled = true;
+  $('bt-report').style.display = 'none';
+  $('bt-state').style.display = 'block';
+  $('bt-tf').textContent = currentTF;
+  $('bt-state').textContent = walkForward
+    ? 'Running walk-forward search over the gate params… (a few seconds)'
+    : 'Replaying the rotation calls over history…';
+  try {
+    const body = { timeframe: currentTF, tail: currentTail,
+                   exit: { model: $('bt-exit').value }, walk_forward: !!walkForward };
+    const r = await fetch('/api/rrg/backtest', { method: 'POST', body: JSON.stringify(body) });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || 'backtest failed');
+    btLast = d;
+    renderBacktest(d);
+  } catch (e) {
+    $('bt-state').textContent = '⚠ ' + e.message;
+  } finally {
+    runBtn.disabled = wfBtn.disabled = false;
+  }
+}
+
+function btStat(v, l, cls) {
+  return `<div class="bt-stat"><span class="v ${cls || ''}">${v}</span><span class="l">${l}</span></div>`;
+}
+
+function plotlyLayout(legend, xt, yt) {
+  return {
+    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)',
+    font: { color: '#8b94a3', family: 'Spline Sans Mono, monospace', size: 10 },
+    margin: { l: 50, r: 14, t: 10, b: 36 },
+    xaxis: { gridcolor: 'rgba(124,134,148,0.13)', title: xt || '' },
+    yaxis: { gridcolor: 'rgba(124,134,148,0.13)', title: yt || '' },
+    legend: { orientation: 'h', y: 1.14, x: 0 }, showlegend: !!legend,
+  };
+}
+
+function renderBacktest(d) {
+  $('bt-state').style.display = 'none';
+  const rep = $('bt-report');
+  rep.style.display = 'block';
+  const s = d.stats || {}, eq = d.equity || {}, es = d.event_study || {};
+
+  let html = '<div class="bt-summary">';
+  html += btStat(s.n_trades ?? 0, 'Trades');
+  html += btStat(s.win_rate != null ? Math.round(s.win_rate) + '%' : '—', 'Win rate');
+  html += btStat(fmtPct(eq.total_return), 'Strategy', 'bt-v ' + signCls(eq.total_return));
+  html += btStat(fmtPct(eq.bench_total_return), 'SPY', 'bt-v ' + signCls(eq.bench_total_return));
+  html += btStat(fmtPct(eq.max_drawdown), 'Max DD', 'bt-v neg');
+  html += btStat(eq.sharpe != null ? (+eq.sharpe).toFixed(2) : '—', 'Sharpe');
+  html += '</div>';
+
+  html += '<div class="bt-section-title">Forward return by call type — excess vs SPY (does the call predict?)</div>';
+  html += '<table class="bt-table"><thead><tr><th>Call</th><th>Onsets</th>';
+  HZ.forEach(h => html += `<th>+${h}d</th>`);
+  html += '<th>+10d win</th></tr></thead><tbody>';
+  ['ROTATE IN', 'ROTATE OUT', 'HOLD', 'WATCH', 'AVOID'].forEach(call => {
+    const row = es[call]; if (!row) return;
+    const cls = call === 'ROTATE IN' ? 'call-in' : (call === 'ROTATE OUT' ? 'call-out' : '');
+    html += `<tr><td class="${cls}">${call}</td><td>${row.n_onsets}</td>`;
+    HZ.forEach(h => {
+      const ex = row.horizons[h] ? row.horizons[h].excess : null;
+      html += `<td class="${signCls(ex)}">${ex == null ? '—' : fmtPct(ex)}</td>`;
+    });
+    const w10 = row.horizons['10'];
+    html += `<td>${w10 && w10.win_rate != null ? Math.round(w10.win_rate) + '%' : '—'}</td></tr>`;
+  });
+  html += '</tbody></table>';
+  html += '<div class="bt-note">Excess = the sector\'s return minus SPY over the same window, averaged across signal onsets. A working tool shows ROTATE IN positive and ROTATE OUT negative.</div>';
+
+  if (d.walk_forward) {
+    const w = d.walk_forward;
+    html += '<div class="bt-section-title">Walk-forward — recommended gate params</div>';
+    html += '<table class="bt-table"><thead><tr><th>Param</th><th>Default</th><th>Recommended</th></tr></thead><tbody>';
+    Object.keys(w.recommended).forEach(k => {
+      const def = w.defaults[k], rec = w.recommended[k];
+      const hl = def !== rec ? ' style="color:var(--accent);font-weight:700"' : '';
+      html += `<tr><td>${k}</td><td>${def}</td><td${hl}>${rec}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    html += `<div class="bt-note">Mean out-of-sample IN−OUT excess separation at +${w.horizon}d: <b>${fmtPct(w.mean_oos_sep)}</b> across ${w.folds.length} folds. ${w.note}</div>`;
+    html += '<div class="bt-section-title">Folds — in-sample vs out-of-sample</div>';
+    html += '<table class="bt-table"><thead><tr><th>Fold</th><th>IS end</th><th>OOS end</th><th>IS sep</th><th>OOS sep</th></tr></thead><tbody>';
+    w.folds.forEach(f => {
+      html += `<tr><td>${f.fold}</td><td>${f.is_end}</td><td>${f.oos_end}</td>`
+            + `<td class="${signCls(f.is_sep)}">${fmtPct(f.is_sep)}</td>`
+            + `<td class="${signCls(f.oos_sep)}">${fmtPct(f.oos_sep)}</td></tr>`;
+    });
+    html += '</tbody></table>';
+  }
+
+  if (eq.dates)     html += '<div class="bt-section-title">Equity — strategy vs SPY</div><div id="bt-equity" class="bt-chart"></div>';
+  if (d.histogram)  html += '<div class="bt-section-title">Trade return distribution</div><div id="bt-hist" class="bt-chart" style="height:220px"></div>';
+  if (d.caveats)    html += '<div class="bt-caveats">' + d.caveats.map(c => '· ' + c).join('<br>') + '</div>';
+
+  rep.innerHTML = html;
+
+  if (window.Plotly && eq.dates) {
+    Plotly.newPlot('bt-equity', [
+      { x: eq.dates, y: eq.strategy,  name: 'Strategy', mode: 'lines', line: { color: '#3ddc84', width: 2 } },
+      { x: eq.dates, y: eq.benchmark, name: 'SPY',      mode: 'lines', line: { color: '#8b94a3', width: 1.5, dash: 'dot' } },
+    ], plotlyLayout(true), { displayModeBar: false, responsive: true });
+  }
+  if (window.Plotly && d.histogram) {
+    const h = d.histogram, centers = [];
+    for (let i = 0; i < h.counts.length; i++) centers.push(((h.edges[i] + h.edges[i + 1]) / 2).toFixed(1));
+    Plotly.newPlot('bt-hist', [
+      { x: centers, y: h.counts, type: 'bar', marker: { color: '#4f9be8' } },
+    ], plotlyLayout(false, 'Trade return %', 'Trades'), { displayModeBar: false, responsive: true });
+  }
+}
+
+function backtestMarkdown(d) {
+  if (!d) return '';
+  const c = d.config || {}, s = d.stats || {}, eq = d.equity || {}, es = d.event_study || {};
+  let m = `# RRG backtest — ${c.interval} (${c.start} → ${c.end})\n\n`;
+  m += `Trades ${s.n_trades || 0} · win ${s.win_rate != null ? Math.round(s.win_rate) + '%' : '—'} · `
+     + `strategy ${fmtPct(eq.total_return)} vs SPY ${fmtPct(eq.bench_total_return)} · maxDD ${fmtPct(eq.max_drawdown)}\n\n`;
+  m += `## Forward excess vs SPY by call\n\n| Call | Onsets | ${HZ.map(h => '+' + h + 'd').join(' | ')} |\n`;
+  m += `|---|---|${HZ.map(() => '---').join('|')}|\n`;
+  ['ROTATE IN', 'ROTATE OUT', 'HOLD', 'WATCH', 'AVOID'].forEach(call => {
+    const r = es[call]; if (!r) return;
+    m += `| ${call} | ${r.n_onsets} | ${HZ.map(h => r.horizons[h] ? fmtPct(r.horizons[h].excess) : '—').join(' | ')} |\n`;
+  });
+  if (d.walk_forward) {
+    const w = d.walk_forward;
+    m += `\n## Walk-forward (mean OOS sep +${w.horizon}d: ${fmtPct(w.mean_oos_sep)})\n\n`;
+    m += 'Recommended: `' + JSON.stringify(w.recommended) + '`\n\n';
+    m += `| Fold | IS end | OOS end | IS sep | OOS sep |\n|---|---|---|---|---|\n`;
+    w.folds.forEach(f => m += `| ${f.fold} | ${f.is_end} | ${f.oos_end} | ${fmtPct(f.is_sep)} | ${fmtPct(f.oos_sep)} |\n`);
+  }
+  m += `\n${(d.caveats || []).map(x => '> ' + x).join('\n')}\n`;
+  return m;
+}
+
+$('bt-run').addEventListener('click', () => runBacktest(false));
+$('bt-wf').addEventListener('click',  () => runBacktest(true));
+$('bt-copy').addEventListener('click', async (e) => {
+  if (!btLast) { flashBtn(e.currentTarget, 'Run first'); return; }
+  try { await navigator.clipboard.writeText(backtestMarkdown(btLast)); flashBtn(e.currentTarget, 'Copied ✓'); }
+  catch { flashBtn(e.currentTarget, 'Copy failed'); }
+});
 
 load();
 </script>

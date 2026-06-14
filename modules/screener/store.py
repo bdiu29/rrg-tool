@@ -132,6 +132,17 @@ BUILTIN_SCREENS = [
         ],
     },
     {
+        # Volume leading price — the pre-pump read the vol-thrust alert is
+        # too late for. Deliberately no trend conditions: clone and tighten.
+        "name": "Volume Building",
+        "universe": "all",
+        "conditions": [
+            {"field": "rvol_10d", "op": ">=",      "value": 2.0},
+            {"field": "chg_pct",  "op": "between", "value": [-3, 3]},
+            {"field": "volume",   "op": ">",       "value": 100000},
+        ],
+    },
+    {
         "name": "Golden Pocket",
         "universe": "all",
         "conditions": [

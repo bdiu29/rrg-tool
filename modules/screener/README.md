@@ -15,9 +15,10 @@ Open at **http://localhost:8000/screener.html**. Reads daily bars from the [Brea
 ## What it does
 
 - **Screen** the whole market with a condition builder — price/volume/RVOL, SMA & **EMA** relations (5/10/20/50/100/200), RSI, ATR, relative strength vs SPY (1m/3m), 52-week distances, gaps, **golden-pocket** Fibonacci state, market cap, P/E, dividend yield, beta, days-to-earnings, sector, and the sector's RRG call as a filterable column.
-- **Save** named screens; four presets ship built in (the first two are your real TradingView presets):
+- **Save** named screens; five presets ship built in (the first two are your real TradingView presets):
   - **Breakout** — MktCap 10M–10T · Vol chg > 80% · Vol > 100k · Price ≥ 50SMA · RVOL > 1
   - **Continuation** — Price > 50SMA · Chg > 2% · MktCap 100M–10T · Vol chg > 80% · Vol > 100k · Price > 150SMA
+  - **Volume Building** — RVOL ≥ 2 · \|Chg\| ≤ 3% · Vol > 100k — heavy tape while price is still quiet (volume leading price, the pre-pump read); deliberately no trend filters, so clone and tighten
   - **Golden Pocket** — price inside the bullish 0.618–0.786 retracement of its latest up-swing
   - **Approaching Golden Pocket** — price retraced 0.5–0.618 toward that pocket (lead time before it arrives)
 - **Watch** symbols in named lists; ★ any scan row to add. The **Risk $** input adds a Shares column = `floor(risk ÷ ATR14)` for volatility-based position sizing.
@@ -74,11 +75,14 @@ All phases are resumable via per-symbol status — interrupt and hit **Refresh d
 | Rule | Fires when | Kind |
 |---|---|---|
 | Volume + price thrust | RVOL ≥ 3 **and** \|change\| ≥ 3% | pump / dump |
+| Volume building | RVOL ≥ 2 **while** \|change\| < 3% | pump / dump |
 | RSI extreme | RSI14 ≥ 80 / ≤ 20 | dump / pump |
 | MA stretch | price ±15% from SMA20 | dump / pump |
 | Level break | crosses prior-day 20-day or 52-week high/low (52w suppresses the 20d echo) | pump / dump |
 | Gap | gap ≥ ±4% | pump / dump |
 | Earnings proximity | earnings within 7 days | info |
+
+**Volume building vs. thrust.** The thrust rule fires once a move is already underway (RVOL *and* price both moving); volume building catches the earlier stage — heavy tape while price is still flat — since volume tends to lead price. The two are mutually exclusive at any instant (the `< 3%` change gate), but they're separate rule keys, so a name that quietly accumulates in the morning and then breaks out can fire **building → thrust on the same day**. Tune `RVOL_BUILD` (default 2.0) at the top of `rules.py` if the open-bell tape is too noisy.
 
 Technical extremes carry the kind of the *reversal* they warn about — overbought is a `dump` warning on a holding, washed-out is a `pump` (bounce) candidate.
 

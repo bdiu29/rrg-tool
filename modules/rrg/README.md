@@ -76,15 +76,14 @@ A leg only counts as an impulse that can trigger a fresh ROTATE if it is *direct
 
 The chain is JdK-style on both intervals: **RS-Ratio** is built from the fast/slow EMA ratio of relative strength (a trend measure — x travels with the trend), and **RS-Momentum** is the rate-of-change of that trend (y is the velocity of x). Momentum being the derivative of the plotted ratio is what makes tails arc diagonally/clockwise like a real RRG.
 
-- **Recent bars are weighted more** via EMA smoothing of the RS and momentum series — that speeds up the head without distorting the scale. The normalization itself uses a stable flat (non-EWMA) window.
-- **Normalization differs by interval.** Weekly uses per-ticker z-scores stretched by fixed scale constants. Daily uses *direct affine scaling* of the raw trend ratio and its rate-of-change — no z-scores — which preserves differential tail travel (a sweeping sector sweeps, a crawling one crawls), matching how commercial RRGs look. Scaling constants are fitted by `calibrate_rrg.py` (a staged grid search against a digitized reference) — rerun that script to recalibrate.
-- **Daily spans 50/140 days** (`mom_diff=15`, light `mom_smooth=3`); weekly spans fast 10w / slow 40w (`mom_diff=5`). The 40-week slow leg keeps the macro character — a 3-week pullback won't flip x, a real trend change will. Smoothing is deliberately light so momentum *leads* the ratio and leaders arc over the top of the oval; heavy smoothing lags and produces straight diagonal tails with no rollover.
-- **Elliott-wave phase model (daily momentum):** counter-trend momentum is squashed at the 100 line so wave-2/4 pullbacks and wave-B bounces approach the quadrant boundary but don't cross it. Only a genuine trend flip (a new wave 1) releases the cap, so quadrant crossings reflect real motive→corrective alternation rather than laggard head-fakes. Each sector exports a `phase` field shown in the tooltip and feeding the call logic (a bounce becomes WATCH not ROTATE IN; a pullback becomes HOLD not ROTATE OUT).
+- **Signal-space vs display-space.** The math (in `modules/rrg/signal.py`) keeps two coordinate systems that share the boundary at 100. The **signal** coords drive every call — quadrant, phase, gates — and are σ-normalized about a *fixed* center (RS-Ratio = 100, where the fast EMA equals the slow; momentum = 0), so the units mean the same thing on daily and weekly. The **display** coords sent to the chart are just a cosmetic gain on the signal coords with the offset pinned to exactly 100, so the dots you see and the calls you act on never disagree about which side of the line a sector is on. (This replaced an older daily affine map + weekly z-stretch that had been fitted to a reference image — the cosmetics had leaked into the calls, even nudging the quadrant boundary off the true line.)
+- **Daily spans 50/140 days** (`mom_diff=15`, light `mom_smooth=3`, σ-windows 140d/60d); weekly spans fast 10w / slow 40w (`mom_diff=5`, σ-windows 52w/26w). The 40-week slow leg keeps the macro character — a 3-week pullback won't flip x, a real trend change will. Smoothing is deliberately light so momentum *leads* the ratio and leaders arc over the top of the oval; heavy smoothing lags and produces straight diagonal tails with no rollover.
+- **Elliott-wave phase model (both intervals):** counter-trend momentum is squashed at the boundary so wave-2/4 pullbacks and wave-B bounces approach the quadrant line but don't cross it. Only a genuine trend flip (a new wave 1) releases the cap, so quadrant crossings reflect real motive→corrective alternation rather than laggard head-fakes. Each sector exports a `phase` field shown in the tooltip and feeding the call logic (a bounce becomes WATCH not ROTATE IN; a pullback becomes HOLD not ROTATE OUT).
 - One tail point per calendar week, anchored to each week's **last** bar so points stay put as dates advance.
 
 ### Scoring
 
-- **Accumulation score** (`_accum()`): a transparent heuristic — `50 + 6·momentum-slope + 3·recent-kick + 2·room-below-SPY`, clamped 0–100. Tunable in `modules/rrg/__init__.py`.
+- **Accumulation score** (`_accum()`): a transparent heuristic in σ-units — `50 + 16·momentum-slope + 8·recent-kick + 5·room-below-SPY`, clamped 0–100. It ranks the "best" pick and the Rotate In column; it does *not* decide the binary call.
 - **Distribution score** (`_distrib()`): the symmetric mirror, flagging leadership that's rolling over.
 - **Tail heading** drives the calls — net direction of travel across the *whole* tail (snapped to an 8-point compass), not a single noisy bar. Core mental model: **momentum turns first, RS turns second.**
 
@@ -92,16 +91,29 @@ The axes are pinned to a fixed 90–116 / 94–106 frame for day-to-day consiste
 
 ---
 
+## Backtesting the calls
+
+A **Strategy Backtest** tab on the page (and `POST /api/rrg/backtest`) replays the exact live call logic over ~3 years and asks the honest question: when the tool says ROTATE IN, does that sector actually beat SPY next?
+
+- **Forward-return table by call type** — mean / excess-vs-SPY / win-rate at +1/5/10/20 days, measured from the first bar *after* the signal confirms (no lookahead). A working tool shows ROTATE IN with positive excess and ROTATE OUT negative.
+- **Equity curve** — long the called sectors (exit on the opposing call, or a hold / ATR model), equal-weight, marked daily against SPY, with a trade-return histogram.
+- **Walk-forward** — re-tunes the gate thresholds with expanding time folds and shows in-sample vs out-of-sample side by side, so overfit on a small sample (11 ETFs) is visible rather than hidden. The shipped defaults were baked from this search; re-run it to recalibrate against forward returns.
+
+This is the replacement for the old "make the chart match a reference image" calibration — the calls are now tuned to forward returns, not to a picture.
+
+---
+
 ## Configuration
 
-All in `modules/rrg/__init__.py` unless noted:
+Math and parameters in `modules/rrg/signal.py`; routes in `modules/rrg/__init__.py`:
 
 | What | Where |
 |---|---|
-| Tickers / benchmark | `DEFAULT_TICKERS`, `BENCHMARK` |
+| Tickers / benchmark | `DEFAULT_TICKERS`, `BENCHMARK` (`signal.py`) |
 | Per-sector colors | `SECTOR_COLORS` in `modules/rrg/index.html` |
-| Daily/weekly scaling | `RATIO_*` / `MOM_*` constants (fit by `calibrate_rrg.py`) |
-| Call decision logic | `_rotation_call()` |
-| Accumulation / distribution heuristics | `_accum()` / `_distrib()` |
+| Cosmetic chart spread | `DISP_GAIN_X` / `DISP_GAIN_Y` (`signal.py`) — display only, no effect on calls |
+| Gate thresholds (σ-units) | `signal.DEFAULTS` — baked from `backtest.walk_forward_search` |
+| Call decision logic | `_rotation_call()` (`signal.py`) |
+| Accumulation / distribution heuristics | `_accum()` / `_distrib()` (`signal.py`) |
 
 > Educational only — confirm with price trend, not the RRG alone. This is a faithful, readable take on the JdK method rather than StockCharts' exact proprietary formula; the rotation *behavior* is what matters, not matching an exact value.
