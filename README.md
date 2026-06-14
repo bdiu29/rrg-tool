@@ -10,7 +10,7 @@ A personal market intelligence platform that runs entirely on your Mac. A tiny P
 
 ## Modules
 
-Each module has its own README with the full nuts-and-bolts deep dive.
+Each module has its own README with the full nuts-and-bolts deep dive. See [CHANGELOG.md](CHANGELOG.md) for the history of main updates.
 
 | Module | What it does | Deep dive |
 |---|---|---|
@@ -19,6 +19,10 @@ Each module has its own README with the full nuts-and-bolts deep dive.
 | **Breadth** | Market breadth tracker: McClellan, A-D lines, % above MAs / short-term EMA thrust, regime & divergences across swappable universes (S&P 500 / NYSE / Nasdaq) | [modules/breadth](modules/breadth/README.md) |
 | **Schwab** | Account positions enriched with daily sector rotation signals (BUY / HOLD / SELL) | [modules/schwab](modules/schwab/README.md) |
 | **Screener** | TradingView-style screener over the whole market (incl. EMA & golden-pocket filters) + watchlists + intraday pump/dump alerts (Discord / email) + a **strategy backtester** | [modules/screener](modules/screener/README.md) |
+| **Rankings** | Relative-strength leaderboard for the 11 SPDR sectors — 0-99 percentile ranks vs SPY, daily/weekly rank movers, and the strongest stocks (or the ETF's real top holdings) per sector | [modules/rankings](modules/rankings/README.md) |
+| **Themes** | Editable **theme baskets** (optics, data centers, software, defense, space, AI biotech) turned into equal-weight indices, ranked 0-99 vs SPY with a theme RRG rotation chart, movers, and constituent drill-down | [modules/themes](modules/themes/README.md) |
+
+Every page shares a light **white/navy** theme; the RRG keeps its original dark chart.
 
 ### RRG — direction of travel, not just position
 
@@ -43,6 +47,14 @@ The screener doubles as a **strategy backtester**: take your current screen cond
 <p align="center">
   <img src="assets/backtest.png" alt="Backtest report — stat grid, equity curve vs SPY, and forward-return study" width="900"/>
 </p>
+
+### Rankings — which sectors are strongest, right now
+
+The [Rankings module](modules/rankings/README.md) is a scannable leaderboard: each of the 11 SPDR sectors gets a **0-99 relative-strength rank** (a pooled-historical percentile of its strength vs SPY — continuous, so it spreads and moves meaningfully), shown next to its rank a day / week / month ago. Two small widgets surface the biggest **rank movers** up and down (daily and weekly), and a drill-down lists either the **strongest stocks** in each sector or the ETF's **real top holdings** by weight.
+
+### Themes — track your own baskets
+
+The [Themes module](modules/themes/README.md) does the same thing for **custom theme baskets** you define (optics & photonics, data centers, software, defense, space, AI biotech are seeded — edit them in the page). Each theme becomes an equal-weight index and is scored 0-99 vs SPY, plotted on a **theme RRG** rotation chart with ROTATE calls, with rank movers and a per-theme list of the underlying names ranked by strength. Add, rename, delete themes and edit their tickers right in the UI.
 
 ---
 
@@ -99,6 +111,8 @@ Then open **http://localhost:8000**. Press `Ctrl+C` in the terminal to stop.
 | Breadth — Market Breadth | http://localhost:8000/breadth.html |
 | Schwab — Account Positions | http://localhost:8000/schwab.html |
 | Screener — Stock Screener | http://localhost:8000/screener.html |
+| Rankings — Sector Leaderboard | http://localhost:8000/rankings.html |
+| Themes — Theme Tracker | http://localhost:8000/themes.html |
 
 > **Data note:** the core data comes from Yahoo Finance via `yfinance` (free, no key, but unofficial — the occasional hiccup is normal; just reload) and, where you've connected Schwab, the Schwab Market Data API. Everything is educational only — confirm with price trend, not these tools alone.
 
@@ -116,6 +130,8 @@ modules/
   breadth/              # breadth indicators + dashboard + SQLite store
   schwab/               # Schwab OAuth + positions
   screener/             # screener + watchlists + alerts + SQLite store
+  rankings/             # sector RS leaderboard — 0-99 ranks, movers, holdings
+  themes/               # editable theme baskets → RRG + ranking + constituents + SQLite store
 tests/                  # stdlib unittest — /usr/bin/python3 -m unittest discover tests
 ```
 

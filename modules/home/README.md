@@ -12,8 +12,10 @@ Each badge loads independently and **fails soft** — if one module's API is dow
 | Breadth | `/api/breadth/summary` | current regime (HEALTHY / NEUTRAL / DETERIORATING) |
 | Schwab | `/api/schwab/status` | connection state (connected / refresh pending / not connected) |
 | Screener | `/api/screener/alerts/summary` | alert count today, else the snapshot date |
+| Rankings | `/api/rankings/summary` | the leading sector and its 0-99 rank |
+| Themes | `/api/themes/summary` | the leading theme and its 0-99 rank |
 
-Planned modules are shown as dashed "ghost" cards.
+Planned modules are shown as dashed "ghost" cards. Every live page shares a light white/navy theme (the RRG keeps its dark chart).
 
 ---
 

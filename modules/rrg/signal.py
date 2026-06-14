@@ -340,7 +340,7 @@ def fetch_ohlc(symbols, period=PERIOD):
 # Series + per-tail evaluation
 # ---------------------------------------------------------------------------
 
-def compute_series(tickers, benchmark, interval, asof=None, params=None):
+def compute_series(tickers, benchmark, interval, asof=None, params=None, close=None):
     """Per-ticker point-cadence DataFrames with both coordinate systems.
 
     Returns (series, date, close) where:
@@ -349,13 +349,17 @@ def compute_series(tickers, benchmark, interval, asof=None, params=None):
                (daily → one per ISO week, anchored to the week's last bar),
       date   = the latest benchmark bar date (str) or None,
       close  = the raw close DataFrame (for change_pct / rel_pct in the chart).
+
+    `close` lets a caller inject a pre-built panel (one column per `ticker` +
+    `benchmark`) instead of fetching — used by the themes module to run the RRG
+    on synthetic equal-weight theme indices. When None, prices are fetched.
     """
     fast, slow, mom_diff, mom_smooth, trend_len, ratio_win, mom_win = LENS[interval]
     eta = _p(params, "TREND_ETA")
     tau = _p(params, "MOM_TAU")
 
-    symbols = list(tickers) + [benchmark]
-    close   = _fetch_close(symbols, interval, PERIOD)
+    if close is None:
+        close = _fetch_close(list(tickers) + [benchmark], interval, PERIOD)
     if asof:
         close = close.loc[:asof]
         if close.empty:

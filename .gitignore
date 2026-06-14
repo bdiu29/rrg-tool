@@ -17,3 +17,6 @@ modules/breadth/data/
 
 # Screener module local data store
 modules/screener/data/
+
+# Themes module local data store
+modules/themes/data/

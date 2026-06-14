@@ -17,6 +17,8 @@ from modules.rrg import register_routes as register_rrg
 from modules.schwab import register_routes as register_schwab
 from modules.breadth import register_routes as register_breadth
 from modules.screener import register_routes as register_screener
+from modules.rankings import register_routes as register_rankings
+from modules.themes import register_routes as register_themes
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +73,8 @@ register_rrg(router)
 register_schwab(router)
 register_breadth(router)
 register_screener(router)
+register_rankings(router)
+register_themes(router)
 
 
 # ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@
 
 Personal market intelligence platform to guide investment/trading decisions: avoid drawdowns, catch rotation setups, and surface actionable signals. Built module by module from free data sources, culminating in AI subagents per data domain that feed a unified harness.
 
-**Current state:** Home hub (live status badges) + RRG tool (sector rotation, with a signal/display split and a walk-forward-validated rotation-call backtester) + Schwab account module (positions with sector signals) + Breadth module (market breadth tracker with regime filter) + Screener module (TradingView-style filters, watchlists, intraday pump/dump alerts with Discord/email routing, EMA/golden-pocket filters, and a strategy backtester sidecar).
+**Current state:** Home hub (live status badges) + RRG tool (sector rotation, with a signal/display split and a walk-forward-validated rotation-call backtester) + Schwab account module (positions with sector signals) + Breadth module (market breadth tracker with regime filter) + Screener module (TradingView-style filters, watchlists, intraday pump/dump alerts with Discord/email routing, EMA/golden-pocket filters, and a strategy backtester sidecar) + Rankings module (sector ETF relative-strength leaderboard with 0-99 percentile ranks, rank-up/down movers, and top-stocks-per-sector) + Themes module (user-editable theme baskets → equal-weight indices ranked 0-99 vs SPY with a theme RRG rotation chart, movers, and constituent drill-down). Every page except RRG uses a white/navy palette; RRG keeps the original dark theme.
 
 **Planned modules:** sector/industry trackers (software, space, semis), news/macro events, JPM collar tracking, fed interest rate probabilities, AI subagents.
 
@@ -55,6 +55,14 @@ modules/
     poller.py                # intraday quote poller (daemon) + shared scan-frame/alert pass
     screener.html            # screener frontend
     data/                    # screener.db (gitignored)
+  rankings/
+    __init__.py              # RS-composite → pooled-percentile rank math + route handlers + register_routes()
+    rankings.html            # sector ETF leaderboard frontend
+  themes/
+    __init__.py              # equal-weight theme-index builder + reuse of rankings/RRG math via close= injection + routes
+    store.py                 # SQLite theme CRUD (themes + theme_symbols) + BUILTIN_THEMES seeds
+    themes.html              # theme tracker frontend: SVG RRG chart + ranking + constituents + editor
+    data/                    # themes.db (gitignored)
 tests/                       # stdlib unittest — /usr/bin/python3 -m unittest discover tests
 .env                         # API keys + Schwab tokens (never committed)
 .venv/                       # empty — use system /usr/bin/python3
@@ -108,6 +116,8 @@ Pages:
 - `http://localhost:8000/breadth.html` — market breadth dashboard
 - `http://localhost:8000/schwab.html` — Schwab account positions + sector signals
 - `http://localhost:8000/screener.html` — stock screener + watchlists + alerts
+- `http://localhost:8000/rankings.html` — sector ETF relative-strength leaderboard + rank movers + top stocks per sector
+- `http://localhost:8000/themes.html` — theme tracker: editable theme baskets, theme RRG + ranking + constituents
 
 Dependencies (already installed in `.venv`):
 ```
@@ -195,9 +205,38 @@ TradingView-style screener over the full synced universes (sp500 ∪ nyse ∪ na
 
 ---
 
+## Rankings Module
+
+A scannable companion to the RRG chart: the 11 SPDR sector ETFs scored 0-99 by relative strength vs SPY, served at `/rankings.html`. Math + routes live in `modules/rankings/__init__.py`; the frontend is pure tables/cards (no Plotly).
+
+- **The 0-99 rank is a *pooled historical percentile* of an RS composite — NOT an ordinal 1-of-11 rank.** The composite is a weighted blend of relative-strength (`ETF/SPY`) returns over several horizons (`RS_LOOKBACKS` = 21d/63d/126d, tunable). Build that composite for all 11 sectors across the full 3y panel, pool every value into one reference distribution, and map each sector's current composite to its percentile in it (`_percentile_mapper` via `np.searchsorted`). Pooled-historical (not ordinal-among-11) is deliberate: with only 11 names an ordinal rank is a coarse 100/90/80… ladder with near-meaningless day-over-day deltas; the percentile spreads non-uniformly **and** moves smoothly, which the rank-movers widgets need. Don't "simplify" it to `rank()` across the 11.
+- **Historical rank columns (1D/1W/1M)** read the same percentile mapper on the composite at rows 1/5/21 trading days back — one panel computation yields now + all look-backs, no repeated `asof` calls. **Rank-up/down movers** = `rank_now − rank_{1d,5d}`, top 5 each way (`_rank_movers`).
+- **Reuses RRG primitives, never duplicates downloads:** `signal._fetch_close(DEFAULT_TICKERS + [SPY], "1d", PERIOD)` (the 10-min-cached path) and the same `rs = close[t]/close[SPY]` construction `compute_series` uses. Display columns (RS day/wk/mth %, % off 52w-high) come straight off the close panel.
+- **Top-stocks-per-sector — a frontend toggle between two definitions of "top":**
+  - *Relative Strength* (default): `store.fetch_sector_leaders(sector_etf, n)` JOINs `fundamentals.sector_etf`→`snapshot.rs_1m_pct ORDER BY rs DESC` — the strongest names *classified* into that SPDR sector across the synced universe (NOT the ETF's real basket). Shipped in the main `/api/rankings` payload (`leaders`). **Caveat surfaced in the UI:** sector tags come from the screener's yfinance fundamentals phase (slow, possibly partial) and need a built snapshot; an empty sector renders a "run a screener sync" note (fail-soft — the page never blocks).
+  - *Top Holdings*: the ETF's **actual** top holdings by index weight, from yfinance `Ticker(etf).funds_data.top_holdings` (~10 names + weights), enriched with `store.fetch_quotes` price/chg. Fetched **on demand** per sector via `GET /api/rankings/holdings?sector=XLK` (not in the main payload — it's a per-ETF network call), cached `_HOLDINGS_TTL`=6h; transient failures return `[]` and are **not** cached so they retry.
+- **Routes:** `GET /rankings.html`, `GET /api/rankings` (sectors + 4 mover lists + RS leaders), `GET /api/rankings/holdings?sector=` (on-demand ETF holdings), `GET /api/rankings/summary` (hub badge: leading sector + rank). Math + holdings transform unit-tested in `tests/test_rankings.py`.
+- **Navigation:** reachable from every page — a hub card plus a `Rankings →` link in each page's cross-nav header (rrg/breadth/schwab/screener); the rankings page carries the reciprocal cross-nav.
+
+---
+
+## Themes Module
+
+A relative-strength tracker for **user-defined investment themes** (Optics & Photonics, Data Centers, Software, Defense, Space, AI Biotech seeded; editable in the UI), served at `/themes.html`. Themes overlap freely (a ticker can be in several) and aren't GICS sectors, so each is a hand-curated ticker basket.
+
+- **The whole module is wiring, not new quant** — a theme is a **synthetic equal-weight index** fed through the *existing* engines. Enabled by a backward-compatible `close=None` parameter threaded through `signal.compute_series`, `rrg.compute_rrg`, and `rankings.compute_rankings`: pass a pre-built close panel and they skip their own `_fetch_close`. Default `None` ⇒ identical prior behavior.
+- **Equal-weight index** (`_build_panel`, [themes/__init__.py](modules/themes/__init__.py)): `(1 + close[constituents].pct_change().mean(axis=1).fillna(0)).cumprod()*100`. **Mean-of-returns, not mean-of-prices** (a $900 name must not dominate a $20 one); `skipna` lets a constituent contribute only from its inception, so early index history reflects fewer names. Keyed `T<id>` (synthetic column per theme) + the real `SPY` column → one panel, one cached fetch.
+- **What the page shows off that panel:** theme **ranking 0-99 + movers** via `compute_rankings(keys, "SPY", close=panel)`; theme **RRG** (quadrants, tails, ROTATE calls) via `compute_rrg(keys, "SPY", interval, close=panel)` — the daily/weekly toggle builds a weekly panel from weekly closes; **constituent leaders** computed off the same closes (`rs_1m`/`rs_3m` = stock − SPY return), self-contained (no screener/breadth dependency). Synthetic `T<id>` tickers are post-processed back to theme names from the theme map.
+- **Store** (`store.py`, `modules/themes/data/themes.db`): DB-backed CRUD mirroring the screener watchlist pattern — `themes` + `theme_symbols`, `save_theme`/`list_themes`/`delete_theme`/`seed_builtin_themes`, `BUILTIN_THEMES` seeded on first init (idempotent). Editing a theme then reloading recomputes everything (the price cache keys on the symbol set).
+- **Frontend** (`themes.html`, white/navy): the RRG chart is the RRG page's **SVG renderer ported and re-themed** (navy quadrant tints/gridlines/tails), node labels are 5-char tags off the theme name; plus the ranking table + movers (reused from rankings.html), constituent tabs, and a theme editor (create/rename/delete + ticker textarea → the CRUD endpoints).
+- **Routes:** `GET /themes.html`, `GET /api/themes?timeframe=&tail=` (ranking + rrg + leaders + theme defs, one payload), `POST /api/themes/{save,delete}`, `GET /api/themes/summary` (hub badge). Math/store/injection unit-tested in `tests/test_themes.py`.
+
+---
+
 ## Development Conventions
 
-- One `modules/<name>/` folder per data domain. No cross-module imports except: schwab imports `compute_rrg`, `BENCHMARK`, `DEFAULT_TICKERS` from rrg (intentional — schwab signals are derived from RRG); breadth imports `get_access_token` from schwab (intentional — schwab owns OAuth, breadth reuses the authenticated session for market data); screener imports breadth's `store`/`universes`/`datasource` (bars + RateLimiter — breadth owns price history), schwab's `get_access_token`/`get_position_symbols`/`SECTOR_ETF_MAP`/`_read_env`, and rrg's `compute_rrg` for sector context (all intentional — screener is a consumer of every other module's domain).
+- One `modules/<name>/` folder per data domain. No cross-module imports except: schwab imports `compute_rrg`, `BENCHMARK`, `DEFAULT_TICKERS` from rrg (intentional — schwab signals are derived from RRG); breadth imports `get_access_token` from schwab (intentional — schwab owns OAuth, breadth reuses the authenticated session for market data); screener imports breadth's `store`/`universes`/`datasource` (bars + RateLimiter — breadth owns price history), schwab's `get_access_token`/`get_position_symbols`/`SECTOR_ETF_MAP`/`_read_env`, and rrg's `compute_rrg` for sector context (all intentional — screener is a consumer of every other module's domain); rankings imports rrg's `signal` (RS math + cached price fetch, `DEFAULT_TICKERS`/`SECTOR_NAMES`/`BENCHMARK`) and screener's `store.fetch_sector_leaders` (sector constituents — intentional, rankings is a consumer of both); themes imports rrg's `signal`/`compute_rrg` and rankings' `compute_rankings`/`_ret`/`_rel` (it feeds synthetic theme-index panels through both engines via the `close=` param — intentional, themes is the top consumer).
+- **Palette:** home, breadth, schwab, screener, and rankings share a **white/navy** theme (`--bg #ffffff`, `--panel #f4f7fc`, `--ink #0e2148`, navy `--accent #16336e`, green `#1a9d6b`, red `#d1453b`, blue `#2f6fb3`); **RRG is intentionally left on the original dark theme.** Each page keeps the same `:root` variable *names*, so re-theming is mostly a value swap — but several things hold literal hex outside `:root` and must be updated by hand: Plotly layouts (`plot_bgcolor`/`gridcolor`/trace colors in breadth & screener), tint-backed badge/pill/flag/regime/kind classes (their dark *text* colors), and schwab's `--c-watch` (amber, kept distinct from the navy accent). Button text on the accent is `#fff`.
 - Prefer free data sources first (yfinance, FRED, etc.) before paid APIs.
 - No build pipeline — vanilla Python stdlib server, vanilla JS in HTML. Add a framework only when the UI complexity genuinely requires it.
 - Business logic lives in module `__init__.py`. `app.py` stays thin.
@@ -206,7 +245,7 @@ TradingView-style screener over the full synced universes (sp500 ∪ nyse ∪ na
 
 ## Planned Expansion Path
 
-1. **Sector/Industry Trackers** — RRG-style views for software, space, semiconductor sub-industries
+1. ~~**Sector/Industry Trackers** — RRG-style views for software, space, semiconductor sub-industries~~ — **done** as the Themes module (user-editable theme baskets, RRG + ranking + constituents).
 2. **News & Macro Events** — headline feed, economic calendar, FOMC dates
 3. **JPM Collar Tracker** — track the quarterly JPM collar strikes and expiry
 4. **Fed Rate Probabilities** — CME FedWatch or similar for rate cut/hike odds

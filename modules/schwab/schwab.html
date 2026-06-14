@@ -8,17 +8,17 @@
   @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
 
   :root {
-    --bg:     #0a0e14;
-    --panel:  #111722;
-    --grid:   #1c2533;
-    --ink:    #e6edf3;
-    --dim:    #8b94a3;
-    --accent: #ffb000;
-    --c-buy:   #2ecc71;
-    --c-hold:  #4f9be8;
-    --c-sell:  #e05563;
-    --c-watch: #d9943a;
-    --c-avoid: #8b94a3;
+    --bg:     #ffffff;
+    --panel:  #f4f7fc;
+    --grid:   #d7e0ee;
+    --ink:    #0e2148;
+    --dim:    #5d6b85;
+    --accent: #16336e;
+    --c-buy:   #1a9d6b;
+    --c-hold:  #2f6fb3;
+    --c-sell:  #d1453b;
+    --c-watch: #c2871f;
+    --c-avoid: #5d6b85;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -31,7 +31,7 @@
     padding: 28px;
     max-width: 1320px;
     margin: 0 auto;
-    background-image: radial-gradient(circle at 20% 0%, rgba(255,176,0,0.04), transparent 40%);
+    background-image: radial-gradient(circle at 20% 0%, rgba(22,51,110,0.08), transparent 40%);
   }
 
   .nav-back {
@@ -126,7 +126,7 @@
   .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn.primary {
     background: var(--accent);
-    color: #0a0e14;
+    color: #fff;
     border-color: var(--accent);
     font-weight: 700;
   }
@@ -167,12 +167,12 @@
 
   td {
     padding: 10px 14px;
-    border-bottom: 1px solid rgba(28,37,51,0.6);
+    border-bottom: 1px solid var(--grid);
     vertical-align: middle;
     white-space: nowrap;
   }
   tr:last-child td { border-bottom: none; }
-  tr:hover td { background: rgba(255,176,0,0.025); }
+  tr:hover td { background: rgba(22,51,110,0.06); }
 
   .sym  { font-weight: 700; font-size: 13px; letter-spacing: -0.01em; }
   .desc { color: var(--dim); font-size: 10.5px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
@@ -266,7 +266,7 @@
   }
   .auth-note code {
     font-family: 'Spline Sans Mono', monospace;
-    background: rgba(255,255,255,0.05);
+    background: rgba(22,51,110,0.06);
     padding: 1px 5px;
     border-radius: 3px;
     font-size: 10px;
@@ -286,7 +286,7 @@
   }
   .no-creds-banner code {
     font-family: 'Spline Sans Mono', monospace;
-    background: rgba(255,176,0,0.12);
+    background: rgba(22,51,110,0.16);
     padding: 1px 5px;
     border-radius: 3px;
     font-size: 11px;
@@ -294,8 +294,8 @@
 
   /* Error banner */
   .error-banner {
-    background: rgba(224,85,99,0.10);
-    border: 1px solid rgba(224,85,99,0.30);
+    background: rgba(209,69,59,0.12);
+    border: 1px solid rgba(209,69,59,0.34);
     border-radius: 10px;
     padding: 13px 16px;
     font-size: 12px;
@@ -333,6 +333,8 @@
       <a href="/rrg.html" class="nav-back" style="margin-left:14px">RRG →</a>
       <a href="/breadth.html" class="nav-back" style="margin-left:14px">Breadth →</a>
       <a href="/screener.html" class="nav-back" style="margin-left:14px">Screener →</a>
+      <a href="/rankings.html" class="nav-back" style="margin-left:14px">Rankings →</a>
+      <a href="/themes.html" class="nav-back" style="margin-left:14px">Themes →</a>
     </div>
     <h1>Schwab Account<span class="sub">Positions · Sector Signals</span></h1>
   </div>
@@ -383,7 +385,7 @@
     <button class="btn" id="refresh-btn">Refresh</button>
     <button class="btn" id="export-btn">Export CSV</button>
     <span id="positions-status"></span>
-    <button class="btn" id="disconnect-btn" style="margin-left:auto;color:var(--c-sell);border-color:rgba(224,85,99,0.3)">Disconnect</button>
+    <button class="btn" id="disconnect-btn" style="margin-left:auto;color:var(--c-sell);border-color:rgba(209,69,59,0.34)">Disconnect</button>
   </div>
 
   <div id="positions-error" style="display:none" class="error-banner"></div>

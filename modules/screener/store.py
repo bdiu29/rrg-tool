@@ -272,6 +272,42 @@ def snapshot_info():
     return {"date": row[0], "n_symbols": row[1] or 0}
 
 
+def fetch_quotes(symbols):
+    """Snapshot close / chg / RS for a small symbol list, keyed by symbol.
+    Used to enrich ETF holdings (which come from yfinance) with price data we
+    already have. Missing symbols are simply absent from the result."""
+    symbols = list(symbols)
+    if not symbols:
+        return {}
+    qmarks = ",".join("?" * len(symbols))
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT symbol, close, chg_pct, rs_1m_pct FROM snapshot "
+            f"WHERE symbol IN ({qmarks})",
+            symbols,
+        ).fetchall()
+    return {r[0]: {"close": r[1], "chg_pct": r[2], "rs_1m_pct": r[3]} for r in rows}
+
+
+def fetch_sector_leaders(sector_etf, n=15):
+    """Top-n stocks tagged to a SPDR sector, ranked by 1-month relative strength
+    vs SPY. Reads the screener's sector tags (fundamentals) joined to the RS
+    snapshot. Returns [] if nothing in that sector is synced yet — the rankings
+    page treats an empty list as "run a screener sync"."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT f.symbol, s.close, s.chg_pct, s.rs_1m_pct "
+            "FROM fundamentals f JOIN snapshot s ON s.symbol = f.symbol "
+            "WHERE f.sector_etf = ? AND s.rs_1m_pct IS NOT NULL "
+            "ORDER BY s.rs_1m_pct DESC LIMIT ?",
+            (sector_etf, n),
+        ).fetchall()
+    return [
+        {"symbol": r[0], "close": r[1], "chg_pct": r[2], "rs_1m_pct": r[3]}
+        for r in rows
+    ]
+
+
 # ---------------------------------------------------------------------------
 # fundamentals
 # ---------------------------------------------------------------------------

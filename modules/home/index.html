@@ -8,15 +8,15 @@
   @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
 
   :root {
-    --bg: #0a0e14;
-    --panel: #111722;
-    --grid: #1c2533;
-    --ink: #e6edf3;
-    --dim: #8b94a3;
-    --accent: #ffb000;
-    --green: #2fbf8f;
-    --red: #e4596b;
-    --blue: #5b8dd9;
+    --bg: #ffffff;
+    --panel: #f4f7fc;
+    --grid: #d7e0ee;
+    --ink: #0e2148;
+    --dim: #5d6b85;
+    --accent: #16336e;
+    --green: #1a9d6b;
+    --red: #d1453b;
+    --blue: #2f6fb3;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -29,7 +29,7 @@
     padding: 40px 28px;
     max-width: 1100px;
     margin: 0 auto;
-    background-image: radial-gradient(circle at 20% 0%, rgba(255,176,0,0.05), transparent 40%);
+    background-image: radial-gradient(circle at 20% 0%, rgba(22,51,110,0.08), transparent 40%);
   }
 
   header { margin-bottom: 34px; }
@@ -101,10 +101,10 @@
     background: var(--grid);
     color: var(--dim);
   }
-  .badge.healthy       { background: rgba(47,191,143,0.16); color: var(--green); }
-  .badge.neutral       { background: rgba(91,141,217,0.16); color: var(--blue); }
-  .badge.deteriorating { background: rgba(228,89,107,0.16); color: var(--red); }
-  .badge.accent        { background: rgba(255,176,0,0.14);  color: var(--accent); }
+  .badge.healthy       { background: rgba(26,157,107,0.20); color: #15724e; }
+  .badge.neutral       { background: rgba(47,111,179,0.20); color: #245585; }
+  .badge.deteriorating { background: rgba(209,69,59,0.20); color: #a3322a; }
+  .badge.accent        { background: rgba(22,51,110,0.22); color: #16336e; }
 
   .card.planned {
     opacity: 0.45;
@@ -153,6 +153,18 @@
     <h2>Stock Screener</h2>
     <p>TradingView-style filters over the full market, saved screens, watchlists, and intraday pump/dump alerts on positions &amp; watchlist names.</p>
     <span class="badge" id="screener-badge">loading…</span>
+  </a>
+
+  <a class="card" href="/rankings.html">
+    <h2>Sector Rankings</h2>
+    <p>The 11 SPDR sectors scored 0-99 by relative strength vs SPY — rank now vs 1D/1W/1M ago, daily/weekly rank movers, and the strongest stocks in each sector.</p>
+    <span class="badge" id="rankings-badge">loading…</span>
+  </a>
+
+  <a class="card" href="/themes.html">
+    <h2>Theme Tracker</h2>
+    <p>Custom theme baskets (optics, data centers, software, defense, space, AI biotech) scored 0-99 vs SPY with an RRG rotation chart, rank movers, and editable constituents.</p>
+    <span class="badge" id="themes-badge">loading…</span>
   </a>
 
 </div>
@@ -281,10 +293,42 @@ async function loadScreenerBadge() {
   }
 }
 
+async function loadRankingsBadge() {
+  const el = document.getElementById('rankings-badge');
+  try {
+    const r = await fetch('/api/rankings/summary');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    if (!d.text || d.status === 'neutral') throw new Error();
+    el.textContent = d.text;
+    el.className = 'badge healthy';
+  } catch {
+    el.textContent = 'no data';
+    el.className = 'badge';
+  }
+}
+
+async function loadThemesBadge() {
+  const el = document.getElementById('themes-badge');
+  try {
+    const r = await fetch('/api/themes/summary');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    if (!d.text || d.status === 'neutral') throw new Error();
+    el.textContent = d.text;
+    el.className = 'badge healthy';
+  } catch {
+    el.textContent = 'no data';
+    el.className = 'badge';
+  }
+}
+
 loadBreadthBadge();
 loadRrgBadge();
 loadSchwabBadge();
 loadScreenerBadge();
+loadRankingsBadge();
+loadThemesBadge();
 </script>
 
 </body>

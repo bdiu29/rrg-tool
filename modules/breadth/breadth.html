@@ -8,18 +8,18 @@
   @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
 
   :root {
-    --bg: #0a0e14;
-    --panel: #111722;
-    --grid: #1c2533;
-    --plot-bg: #0f1521;
-    --ink: #e6edf3;
-    --dim: #8b94a3;
-    --accent: #ffb000;
-    --green: #2fbf8f;
-    --red: #e4596b;
-    --blue: #5b8dd9;
-    --teal: #4ec3c9;
-    --purple: #b58de0;
+    --bg: #ffffff;
+    --panel: #f4f7fc;
+    --grid: #d7e0ee;
+    --plot-bg: #f4f7fc;
+    --ink: #0e2148;
+    --dim: #5d6b85;
+    --accent: #16336e;
+    --green: #1a9d6b;
+    --red: #d1453b;
+    --blue: #2f6fb3;
+    --teal: #1f9aa8;
+    --purple: #7b5bb5;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -32,7 +32,7 @@
     padding: 28px;
     max-width: 1240px;
     margin: 0 auto;
-    background-image: radial-gradient(circle at 20% 0%, rgba(255,176,0,0.04), transparent 40%);
+    background-image: radial-gradient(circle at 20% 0%, rgba(22,51,110,0.08), transparent 40%);
   }
 
   .nav-link {
@@ -96,7 +96,7 @@
     transition: all 0.18s ease;
     white-space: nowrap;
   }
-  .toggle button.active { background: var(--accent); color: #0a0e14; font-weight: 600; }
+  .toggle button.active { background: var(--accent); color: #fff; font-weight: 600; }
   .toggle button .chip {
     display: inline-block;
     font-size: 8.5px;
@@ -104,7 +104,7 @@
     margin-left: 5px;
     vertical-align: 2px;
   }
-  .toggle button.active .chip { color: #5a3c00; }
+  .toggle button.active .chip { color: #ffd9a8; }
 
   .btn {
     background: var(--panel);
@@ -141,9 +141,9 @@
     border-radius: 10px;
     flex-shrink: 0;
   }
-  .regime-pill.HEALTHY       { background: rgba(47,191,143,0.15); color: var(--green); }
-  .regime-pill.NEUTRAL       { background: rgba(91,141,217,0.15); color: var(--blue); }
-  .regime-pill.DETERIORATING { background: rgba(228,89,107,0.15); color: var(--red); }
+  .regime-pill.HEALTHY       { background: rgba(26,157,107,0.20); color: #15724e; }
+  .regime-pill.NEUTRAL       { background: rgba(47,111,179,0.20); color: #245585; }
+  .regime-pill.DETERIORATING { background: rgba(209,69,59,0.20); color: #a3322a; }
   .regime-pill .score { display:block; font-family:'Spline Sans Mono',monospace; font-weight:400; font-size:10px; margin-top:3px; opacity:0.75; }
 
   .banner-col { flex: 1; min-width: 260px; }
@@ -159,9 +159,9 @@
     border-radius: 6px;
     margin: 2px 4px 2px 0;
   }
-  .flag.bearish { background: rgba(228,89,107,0.15); color: var(--red); }
-  .flag.bullish { background: rgba(47,191,143,0.15); color: var(--green); }
-  .flag.zbt     { background: rgba(47,191,143,0.25); color: var(--green); font-weight: 600; }
+  .flag.bearish { background: rgba(209,69,59,0.20); color: #a3322a; }
+  .flag.bullish { background: rgba(26,157,107,0.20); color: #15724e; }
+  .flag.zbt     { background: rgba(26,157,107,0.32); color: #15724e; font-weight: 600; }
 
   /* Metrics strip */
   .metrics {
@@ -237,6 +237,8 @@
       <a href="/rrg.html" class="nav-link" style="margin-left:14px">RRG →</a>
       <a href="/schwab.html" class="nav-link" style="margin-left:14px">Schwab →</a>
       <a href="/screener.html" class="nav-link" style="margin-left:14px">Screener →</a>
+      <a href="/rankings.html" class="nav-link" style="margin-left:14px">Rankings →</a>
+      <a href="/themes.html" class="nav-link" style="margin-left:14px">Themes →</a>
     </div>
     <h1>Market Breadth<span class="sub">Participation vs <span id="index-sym">—</span> · regime &amp; divergences</span></h1>
   </div>
@@ -299,9 +301,9 @@
 
 <script>
 const C = {
-  accent:'#ffb000', green:'#2fbf8f', red:'#e4596b', blue:'#5b8dd9',
-  teal:'#4ec3c9', purple:'#b58de0', ink:'#e6edf3', dim:'#8b94a3',
-  grid:'rgba(124,134,148,0.13)',
+  accent:'#16336e', green:'#1a9d6b', red:'#d1453b', blue:'#2f6fb3',
+  teal:'#1f9aa8', purple:'#7b5bb5', ink:'#0e2148', dim:'#5d6b85',
+  grid:'rgba(14,33,72,0.12)',
 };
 
 let universes = [];
@@ -525,7 +527,7 @@ function renderChart() {
   };
   const layout = {
     paper_bgcolor: 'rgba(0,0,0,0)',
-    plot_bgcolor: '#0f1521',
+    plot_bgcolor: '#f4f7fc',
     font: {family: 'Spline Sans Mono, monospace', size: 10, color: C.dim},
     margin: {l: 58, r: 58, t: 16, b: 30},
     height: 1320,

@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Theme Tracker — Market Intelligence Harness</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #ffffff;
+    --panel: #f4f7fc;
+    --panel2: #e7eef8;
+    --grid: #d7e0ee;
+    --ink: #0e2148;
+    --dim: #5d6b85;
+    --accent: #16336e;
+    --green: #1a9d6b;
+    --red: #d1453b;
+    --blue: #2f6fb3;
+    /* RRG chart */
+    --plot-bg: #ffffff;
+    --gridline: rgba(14,33,72,0.10);
+    --cross: rgba(14,33,72,0.32);
+    --improving: rgba(47,111,179,0.13);
+    --leading:   rgba(26,157,107,0.15);
+    --lagging:   rgba(209,69,59,0.13);
+    --weakening: rgba(184,134,31,0.15);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: 'Spline Sans Mono', monospace; min-height: 100vh;
+    padding: 28px; max-width: 1280px; margin: 0 auto;
+    background-image: radial-gradient(circle at 18% 0%, rgba(22,51,110,0.06), transparent 42%);
+  }
+  .nav-link { font-size: 10px; color: var(--dim); text-decoration: none;
+    letter-spacing: 0.08em; text-transform: uppercase; transition: color 0.15s;
+    display: inline-block; margin-bottom: 7px; }
+  .nav-link:hover { color: var(--accent); }
+  h1 { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800;
+    font-size: 30px; letter-spacing: -0.02em; line-height: 1; }
+  h1 .sub { display: block; font-size: 11px; font-weight: 400; color: var(--dim);
+    letter-spacing: 0.08em; margin-top: 7px; text-transform: uppercase; }
+  header { display: flex; justify-content: space-between; align-items: flex-end;
+    flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+  .status-line { font-size: 10.5px; color: var(--dim); text-align: right; line-height: 1.8; }
+
+  .controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+  .toggle { display: inline-flex; border: 1px solid var(--grid); border-radius: 8px; overflow: hidden; }
+  .toggle button { font-family: inherit; font-size: 11px; padding: 6px 13px; background: var(--panel);
+    color: var(--dim); border: none; cursor: pointer; transition: all 0.13s; }
+  .toggle button + button { border-left: 1px solid var(--grid); }
+  .toggle button.active { background: var(--accent); color: #fff; font-weight: 600; }
+  .ctl-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); }
+  select, input[type=text], textarea {
+    font-family: inherit; font-size: 12px; background: var(--bg); color: var(--ink);
+    border: 1px solid var(--grid); border-radius: 7px; padding: 6px 9px; outline: none; }
+  select:focus, input:focus, textarea:focus { border-color: var(--accent); }
+  .btn { font-family: inherit; font-size: 11.5px; background: var(--panel); border: 1px solid var(--grid);
+    border-radius: 8px; color: var(--ink); padding: 6px 13px; cursor: pointer; transition: all 0.15s; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
+  .btn.danger { color: var(--red); }
+  .btn.danger:hover { border-color: var(--red); }
+
+  .panel { background: var(--panel); border: 1px solid var(--grid); border-radius: 14px;
+    padding: 18px 20px; margin-bottom: 18px; }
+  .panel-title { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 15px;
+    letter-spacing: -0.01em; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+  .panel-title .count { font-family: 'Spline Sans Mono', monospace; font-size: 10px; font-weight: 500;
+    color: var(--dim); border: 1px solid var(--grid); border-radius: 20px; padding: 3px 11px;
+    margin-left: auto; background: var(--panel2); }
+
+  /* layout: RRG + ranking side by side */
+  .top { display: grid; grid-template-columns: 624px 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 1080px) { .top { grid-template-columns: 1fr; } }
+
+  /* RRG chart */
+  .chart-wrap { background: var(--bg); border: 1px solid var(--grid); border-radius: 12px; padding: 6px; }
+  #chart { width: 100%; height: auto; display: block; }
+  .quad-label { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 11px;
+    letter-spacing: 0.08em; opacity: 0.85; }
+  .node-dot { cursor: pointer; transition: r 0.15s ease; }
+  .node-label { font-family: 'Spline Sans Mono', monospace; font-weight: 600; font-size: 10px; }
+  .tail-line { fill: none; opacity: 0.55; }
+  .legend { display: flex; flex-direction: column; gap: 2px; margin-top: 8px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; padding: 5px 7px; border-radius: 7px;
+    cursor: pointer; font-size: 11px; }
+  .legend-item:hover { background: var(--panel2); }
+  .legend-item.muted { opacity: 0.32; }
+  .legend-item .swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+  .legend-item .tk { font-weight: 600; min-width: 46px; }
+  .legend-item .nm { color: var(--dim); }
+  .call-badge { margin-left: auto; font-size: 8.5px; font-weight: 700; letter-spacing: 0.06em;
+    border: 1px solid currentColor; border-radius: 4px; padding: 1px 5px; }
+  .call-in { color: var(--green); } .call-out { color: var(--red); } .call-hold { color: var(--blue); }
+  .call-avoid { color: var(--dim); } .call-watch { color: #b8860b; }
+
+  /* tables */
+  table { width: 100%; border-collapse: collapse; }
+  thead th { font-size: 9px; font-weight: 600; letter-spacing: 0.07em; text-transform: uppercase;
+    color: var(--dim); text-align: right; padding: 7px 9px; border-bottom: 1px solid var(--grid);
+    cursor: pointer; user-select: none; white-space: nowrap; }
+  thead th.l { text-align: left; }
+  thead th:hover { color: var(--accent); }
+  tbody td { font-size: 12px; padding: 8px 9px; text-align: right; border-bottom: 1px solid var(--grid);
+    white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(22,51,110,0.05); }
+  td.l { text-align: left; }
+  .nm-cell { display: flex; align-items: center; gap: 7px; }
+  .nm-cell .sw { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+  .pos { color: var(--green); } .neg { color: var(--red); } .muted { color: var(--dim); }
+  .pill { display: inline-flex; align-items: center; justify-content: center; min-width: 32px;
+    height: 24px; padding: 0 8px; border-radius: 12px; font-size: 11px; font-weight: 600;
+    border: 1px solid transparent; }
+  .pill.sm { min-width: 28px; height: 21px; font-size: 10px; border-radius: 11px; }
+  .pill.na { background: var(--grid); color: var(--dim); }
+
+  .movers { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 14px; }
+  @media (max-width: 1080px) { .movers { grid-template-columns: 1fr 1fr; } }
+  .mover-card { background: var(--panel); border: 1px solid var(--grid); border-radius: 12px; padding: 14px 15px; }
+  .mover-card h3 { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 11px;
+    letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 10px; }
+  .mover-card h3.up { color: var(--green); } .mover-card h3.down { color: var(--red); }
+  .mrow { display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center;
+    padding: 6px 0; border-bottom: 1px solid var(--grid); }
+  .mrow:last-child { border-bottom: none; }
+  .mrow .nm { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mrow .delta { font-size: 11px; font-weight: 600; }
+
+  /* tabs + constituents */
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .tab { font-family: inherit; font-size: 11px; cursor: pointer; background: var(--panel2);
+    border: 1px solid var(--grid); color: var(--dim); border-radius: 8px; padding: 5px 11px; transition: all 0.13s; }
+  .tab:hover { border-color: var(--accent); color: var(--ink); }
+  .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+  /* editor */
+  .theme-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: 10px; align-items: center;
+    padding: 9px 0; border-bottom: 1px solid var(--grid); }
+  .theme-row:last-child { border-bottom: none; }
+  .theme-row .tname { font-weight: 600; }
+  .theme-row .tsyms { font-size: 10.5px; color: var(--dim); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; }
+  .editor-form { display: none; background: var(--panel2); border: 1px solid var(--grid);
+    border-radius: 10px; padding: 14px 16px; margin-top: 12px; }
+  .editor-form.show { display: block; }
+  .editor-form .fld { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .editor-form label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+  .editor-form textarea { width: 100%; min-height: 60px; resize: vertical; }
+  .editor-form input[type=text] { width: 100%; }
+  .builtin-tag { font-size: 8.5px; color: var(--dim); border: 1px solid var(--grid); border-radius: 4px;
+    padding: 1px 5px; }
+
+  .empty { color: var(--dim); font-size: 12px; padding: 22px; text-align: center; }
+  #tooltip { position: fixed; pointer-events: none; opacity: 0; transition: opacity 0.1s;
+    background: var(--ink); color: #fff; border-radius: 8px; padding: 9px 11px; font-size: 11px;
+    z-index: 50; box-shadow: 0 6px 20px rgba(14,33,72,0.25); }
+  #tooltip .tt-tk { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 700; font-size: 13px; margin-bottom: 3px; }
+  #tooltip .tt-row { opacity: 0.85; }
+  #tooltip .tt-row b { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <nav>
+      <a href="/" class="nav-link">← Home</a>
+      <a href="/rrg.html" class="nav-link" style="margin-left:14px">RRG →</a>
+      <a href="/rankings.html" class="nav-link" style="margin-left:14px">Rankings →</a>
+      <a href="/breadth.html" class="nav-link" style="margin-left:14px">Breadth →</a>
+      <a href="/screener.html" class="nav-link" style="margin-left:14px">Screener →</a>
+    </nav>
+    <h1>Theme Tracker<span class="sub">Custom theme baskets · relative strength vs SPY</span></h1>
+  </div>
+  <div class="status-line" id="status">loading…</div>
+</header>
+
+<div class="controls">
+  <span class="ctl-label">Lens</span>
+  <span class="toggle" id="tf-toggle">
+    <button data-tf="daily" class="active">Daily</button>
+    <button data-tf="weekly">Weekly</button>
+  </span>
+  <span class="ctl-label">Tail</span>
+  <select id="tail-select">
+    <option value="4">4</option><option value="6" selected>6</option>
+    <option value="8">8</option><option value="10">10</option>
+  </select>
+  <button class="btn" id="edit-btn" style="margin-left:auto">✎ Edit themes</button>
+</div>
+
+<div class="top">
+  <!-- RRG -->
+  <div class="panel" style="margin:0">
+    <div class="panel-title">Theme Rotation <span class="count" id="rrg-lens">—</span></div>
+    <div class="chart-wrap"><svg id="chart" viewBox="0 0 600 600"></svg></div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <!-- ranking -->
+  <div class="panel" style="margin:0">
+    <div class="panel-title">Theme Strength <span class="count" id="theme-count">—</span></div>
+    <table id="rank-table">
+      <thead><tr>
+        <th data-k="rank">Now ↓</th><th data-k="rank_1d">1D</th>
+        <th data-k="rank_1w">1W</th><th data-k="rank_1m">1M</th>
+        <th class="l" data-k="name">Theme</th>
+        <th data-k="rs_day">RS Day%</th><th data-k="rs_wk">RS Wk%</th>
+        <th data-k="rs_mth">RS Mth%</th><th data-k="pct_52w_high">52W High</th>
+      </tr></thead>
+      <tbody id="rank-body"><tr><td class="empty" colspan="9">loading…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- movers -->
+<div class="movers" style="margin-bottom:18px">
+  <div class="mover-card"><h3 class="up">Daily Rank Up</h3><div id="up-d"></div></div>
+  <div class="mover-card"><h3 class="up">Weekly Rank Up</h3><div id="up-w"></div></div>
+  <div class="mover-card"><h3 class="down">Daily Rank Down</h3><div id="down-d"></div></div>
+  <div class="mover-card"><h3 class="down">Weekly Rank Down</h3><div id="down-w"></div></div>
+</div>
+
+<!-- constituents -->
+<div class="panel">
+  <div class="panel-title">Constituents <span class="count">ranked by RS vs SPY</span></div>
+  <div class="tabs" id="theme-tabs"></div>
+  <table>
+    <thead><tr>
+      <th class="l">#</th><th class="l">Symbol</th><th>Price</th>
+      <th>Chg%</th><th>RS 1M%</th><th>RS 3M%</th>
+    </tr></thead>
+    <tbody id="cons-body"><tr><td class="empty" colspan="6">loading…</td></tr></tbody>
+  </table>
+</div>
+
+<!-- editor -->
+<div class="panel" id="editor-panel" style="display:none">
+  <div class="panel-title">Edit Themes
+    <button class="btn primary" id="new-theme-btn" style="margin-left:auto">+ New theme</button>
+  </div>
+  <div id="theme-list"></div>
+  <div class="editor-form" id="editor-form">
+    <div class="fld"><label>Name</label><input type="text" id="ef-name" placeholder="Theme name"></div>
+    <div class="fld"><label>Description</label><input type="text" id="ef-desc" placeholder="Optional"></div>
+    <div class="fld"><label>Tickers (space or comma separated)</label>
+      <textarea id="ef-syms" placeholder="NVDA AMD TSM ..."></textarea></div>
+    <div style="display:flex; gap:8px; align-items:center">
+      <button class="btn primary" id="ef-save">Save</button>
+      <button class="btn" id="ef-cancel">Cancel</button>
+      <span id="ef-msg" style="font-size:11px; color:var(--red)"></span>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+const NS = 'http://www.w3.org/2000/svg';
+const $ = id => document.getElementById(id);
+const el = (tag, attrs = {}) => { const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+
+const PALETTE = ['#2f6fb3','#1a9d6b','#c0392b','#b8860b','#7b5bb5','#1f9aa8',
+                 '#d1453b','#e07b1a','#5566d6','#974fc0','#0e8f7e','#a8527a'];
+const CALL_STYLE = {
+  'ROTATE IN':{cls:'call-in',short:'IN'}, 'ROTATE OUT':{cls:'call-out',short:'OUT'},
+  'HOLD':{cls:'call-hold',short:'HOLD'}, 'AVOID':{cls:'call-avoid',short:'AVOID'},
+  'WATCH':{cls:'call-watch',short:'WATCH'} };
+
+let DATA = null;
+let currentTF = 'daily', currentTail = 6;
+let sortKey = 'rank', sortDir = -1;
+let activeTheme = null;          // theme id (string) for constituents
+let colorByKey = {};             // RRG key -> color
+let muted = new Set();
+let editId = null;
+
+const tagFor = name => (name || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 5) || '—';
+function rankColor(r){
+  if (r === null || r === undefined) return null;
+  r = Math.max(0, Math.min(99, r));
+  const hue = r <= 50 ? 6 + (42-6)*(r/50) : 42 + (135-42)*((r-50)/49);
+  return { bg:`hsl(${hue},46%,82%)`, fg:`hsl(${hue},55%,26%)`, bd:`hsl(${hue},40%,64%)` };
+}
+function pill(r, sm){ const c = rankColor(r);
+  if (!c) return `<span class="pill na ${sm?'sm':''}">—</span>`;
+  return `<span class="pill ${sm?'sm':''}" style="background:${c.bg};color:${c.fg};border-color:${c.bd}">${r}</span>`; }
+function sign(v, suf){ if (v === null || v === undefined) return '<span class="muted">—</span>';
+  const cls = v > 0 ? 'pos' : (v < 0 ? 'neg' : 'muted');
+  return `<span class="${cls}">${(v>0?'+':'')+v.toFixed(2)+(suf||'')}</span>`; }
+const fmtPrice = p => p == null ? '—' : '$' + p.toFixed(2);
+
+// ---- RRG chart (SVG) ----
+function renderChart(){
+  const sectors = (DATA.rrg && DATA.rrg.sectors) || {};
+  const keys = Object.keys(sectors);
+  const svg = $('chart'); svg.innerHTML = '';
+  $('rrg-lens').textContent = (DATA.timeframe || 'daily') + ' · ' + (DATA.tail||6) + '-pt tail';
+  if (!keys.length) { svg.appendChild(Object.assign(el('text',
+    {x:300,y:300,fill:'var(--dim)','text-anchor':'middle','font-size':13}),{textContent:'No theme data'})); return; }
+
+  keys.forEach((k,i) => { if (!(k in colorByKey)) colorByKey[k] = PALETTE[i % PALETTE.length]; });
+  const vis = keys.filter(k => !muted.has(k));
+  let xMin=Infinity,xMax=-Infinity,yMin=Infinity,yMax=-Infinity;
+  (vis.length?vis:keys).forEach(k => { sectors[k].ratio.forEach(v=>{xMin=Math.min(xMin,v);xMax=Math.max(xMax,v);});
+    sectors[k].momentum.forEach(v=>{yMin=Math.min(yMin,v);yMax=Math.max(yMax,v);}); });
+  const xStep=2,yStep=2;
+  const xLo=Math.min(90,Math.floor(xMin/xStep)*xStep), xHi=Math.max(116,Math.ceil(xMax/xStep)*xStep);
+  const yLo=Math.min(94,Math.floor(yMin/yStep)*yStep), yHi=Math.max(106,Math.ceil(yMax/yStep)*yStep);
+  const W=600,H=600,M={l:54,r:24,t:30,b:44}, PL=M.l,PR=W-M.r,PT=M.t,PB=H-M.b;
+  const sx=v=>PL+(v-xLo)/(xHi-xLo)*(PR-PL), sy=v=>PB-(v-yLo)/(yHi-yLo)*(PB-PT);
+  const cx=sx(100), cy=sy(100);
+
+  [ {x:cx,y:PT,w:PR-cx,h:cy-PT,fill:'var(--leading)'},
+    {x:cx,y:cy,w:PR-cx,h:PB-cy,fill:'var(--weakening)'},
+    {x:PL,y:cy,w:cx-PL,h:PB-cy,fill:'var(--lagging)'},
+    {x:PL,y:PT,w:cx-PL,h:cy-PT,fill:'var(--improving)'} ].forEach(q =>
+    svg.appendChild(el('rect',{x:q.x,y:q.y,width:Math.max(0,q.w),height:Math.max(0,q.h),fill:q.fill})));
+
+  for (let v=xLo; v<=xHi+1e-9; v+=xStep){ const X=sx(v);
+    svg.appendChild(el('line',{x1:X,y1:PT,x2:X,y2:PB,stroke:'var(--gridline)','stroke-width':1}));
+    const t=el('text',{x:X,y:PB+15,fill:'var(--dim)','text-anchor':'middle','font-size':10}); t.textContent=Math.round(v); svg.appendChild(t); }
+  for (let v=yLo; v<=yHi+1e-9; v+=yStep){ const Y=sy(v);
+    svg.appendChild(el('line',{x1:PL,y1:Y,x2:PR,y2:Y,stroke:'var(--gridline)','stroke-width':1}));
+    const t=el('text',{x:PL-7,y:Y+3.5,fill:'var(--dim)','text-anchor':'end','font-size':10}); t.textContent=Math.round(v); svg.appendChild(t); }
+  svg.appendChild(el('line',{x1:cx,y1:PT,x2:cx,y2:PB,stroke:'var(--cross)','stroke-width':1.6}));
+  svg.appendChild(el('line',{x1:PL,y1:cy,x2:PR,y2:cy,stroke:'var(--cross)','stroke-width':1.6}));
+  svg.appendChild(el('rect',{x:PL,y:PT,width:PR-PL,height:PB-PT,fill:'none',stroke:'var(--gridline)','stroke-width':1}));
+  [ {t:'IMPROVING',x:PL+8,y:PT+16,a:'start',c:'#2f6fb3'},{t:'LEADING',x:PR-8,y:PT+16,a:'end',c:'#1a9d6b'},
+    {t:'LAGGING',x:PL+8,y:PB-8,a:'start',c:'#c0392b'},{t:'WEAKENING',x:PR-8,y:PB-8,a:'end',c:'#b8860b'} ].forEach(l => {
+    const tx=el('text',{x:l.x,y:l.y,fill:l.c,'text-anchor':l.a}); tx.setAttribute('class','quad-label'); tx.textContent=l.t; svg.appendChild(tx); });
+  const ax=el('text',{x:(PL+PR)/2,y:H-6,fill:'var(--dim)','text-anchor':'middle','font-size':11}); ax.textContent='JdK RS-Ratio →'; svg.appendChild(ax);
+  const ay=el('text',{x:14,y:(PT+PB)/2,fill:'var(--dim)','text-anchor':'middle','font-size':11,transform:`rotate(-90 14 ${(PT+PB)/2})`}); ay.textContent='JdK RS-Momentum →'; svg.appendChild(ay);
+
+  keys.forEach(k => {
+    if (muted.has(k)) return;
+    const s = sectors[k], color = colorByKey[k], n = s.ratio.length;
+    const xy = s.ratio.map((r,j)=>[sx(r),sy(s.momentum[j])]);
+    const line = el('polyline',{points:xy.map(p=>`${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(' '),
+      stroke:color,'stroke-width':1.6,fill:'none','stroke-linejoin':'round','stroke-linecap':'round'});
+    line.setAttribute('class','tail-line'); svg.appendChild(line);
+    for (let j=0;j<n-1;j++) svg.appendChild(el('circle',{cx:xy[j][0],cy:xy[j][1],r:2.2,fill:'var(--plot-bg)',stroke:color,'stroke-width':1.3}));
+    const [hx,hy]=xy[n-1];
+    const head=el('circle',{cx:hx,cy:hy,r:4.5,fill:color}); head.setAttribute('class','node-dot');
+    head.addEventListener('mousemove', ev=>showTip(ev,k,s,color)); head.addEventListener('mouseleave',hideTip);
+    svg.appendChild(head);
+    const lbl=el('text',{x:hx,y:hy-9,fill:color,'text-anchor':'middle'}); lbl.setAttribute('class','node-label'); lbl.textContent=tagFor(s.name); svg.appendChild(lbl);
+  });
+
+  const leg = $('legend'); leg.innerHTML = '';
+  keys.forEach(k => { const s=sectors[k], color=colorByKey[k];
+    const item=document.createElement('div'); item.className='legend-item'+(muted.has(k)?' muted':'');
+    const cs=CALL_STYLE[s.call]||CALL_STYLE['WATCH'];
+    item.innerHTML=`<span class="swatch" style="background:${color}"></span>
+      <span class="tk">${tagFor(s.name)}</span><span class="nm">${s.name}</span>
+      <span class="call-badge ${cs.cls}" title="${s.call_why||''}">${cs.short}</span>`;
+    item.addEventListener('click', ()=>{ muted.has(k)?muted.delete(k):muted.add(k); renderChart(); });
+    leg.appendChild(item); });
+}
+function showTip(ev,k,s,color){ const tt=$('tooltip'), n=s.ratio.length, r=s.ratio[n-1], m=s.momentum[n-1];
+  const quad = r>=100?(m>=100?'Leading':'Weakening'):(m>=100?'Improving':'Lagging');
+  tt.innerHTML=`<div class="tt-tk" style="color:${color}">${s.name}</div>
+    <div class="tt-row">RS-Ratio: <b>${r.toFixed(2)}</b></div><div class="tt-row">RS-Mom: <b>${m.toFixed(2)}</b></div>
+    <div class="tt-row">Quadrant: <b>${quad}</b></div><div class="tt-row">Phase: <b>${s.phase||'—'}</b></div>
+    <div class="tt-row">Call: <b>${s.call||'—'}</b></div>`;
+  tt.style.opacity='1'; tt.style.left=(ev.clientX+16)+'px'; tt.style.top=(ev.clientY+16)+'px'; }
+function hideTip(){ $('tooltip').style.opacity='0'; }
+
+// ---- ranking table ----
+function colorForId(id){ const k='T'+id; return colorByKey[k] || 'var(--dim)'; }
+function renderTable(){
+  const rows = (DATA.ranking.sectors||[]).slice().sort((a,b)=>{
+    let x=a[sortKey], y=b[sortKey];
+    if (x===null||x===undefined) x=-Infinity; if (y===null||y===undefined) y=-Infinity;
+    if (typeof x==='string') return sortDir*x.localeCompare(y); return sortDir*(x-y); });
+  $('theme-count').textContent = rows.length + ' themes';
+  $('rank-body').innerHTML = rows.map(s => `
+    <tr><td>${pill(s.rank)}</td><td>${pill(s.rank_1d,true)}</td><td>${pill(s.rank_1w,true)}</td><td>${pill(s.rank_1m,true)}</td>
+      <td class="l"><span class="nm-cell"><span class="sw" style="background:${colorForId(s.id)}"></span>${s.name}</span></td>
+      <td>${sign(s.rs_day,'%')}</td><td>${sign(s.rs_wk,'%')}</td><td>${sign(s.rs_mth,'%')}</td><td>${sign(s.pct_52w_high,'%')}</td></tr>`).join('')
+    || '<tr><td class="empty" colspan="9">No themes — add one with “Edit themes”.</td></tr>';
+}
+function moverRow(m){ const cls=m.delta>0?'pos':'neg', d=(m.delta>0?'+':'')+m.delta+' pts';
+  return `<div class="mrow">${pill(m.rank,true)}<span class="nm">${m.name}</span><span class="delta ${cls}">${d}</span></div>`; }
+function renderMovers(){ const map={'up-d':'rank_up_daily','up-w':'rank_up_weekly','down-d':'rank_down_daily','down-w':'rank_down_weekly'};
+  for (const [id,key] of Object.entries(map)){ const list=DATA.ranking[key]||[];
+    $(id).innerHTML = list.length ? list.map(moverRow).join('') : '<div class="empty">—</div>'; } }
+
+// ---- constituents ----
+function renderTabs(){
+  const order = (DATA.ranking.sectors||[]).map(s=>({id:String(s.id),name:s.name}));
+  if (!order.length) { $('theme-tabs').innerHTML=''; $('cons-body').innerHTML='<tr><td class="empty" colspan="6">No themes.</td></tr>'; return; }
+  if (!order.find(o=>o.id===activeTheme)) activeTheme = order[0].id;
+  $('theme-tabs').innerHTML = order.map(o =>
+    `<button class="tab ${o.id===activeTheme?'active':''}" data-id="${o.id}">${o.name}</button>`).join('');
+  document.querySelectorAll('#theme-tabs .tab').forEach(b => b.onclick = ()=>{ activeTheme=b.dataset.id; renderTabs(); renderConstituents(); });
+  renderConstituents();
+}
+function renderConstituents(){
+  const list = (DATA.leaders||{})[activeTheme] || [];
+  $('cons-body').innerHTML = list.length ? list.map((s,i)=>`
+    <tr><td class="l muted">${i+1}</td><td class="l" style="font-weight:600">${s.symbol}</td>
+      <td>${fmtPrice(s.price)}</td><td>${sign(s.chg_pct,'%')}</td>
+      <td>${sign(s.rs_1m,'%')}</td><td>${sign(s.rs_3m,'%')}</td></tr>`).join('')
+    : '<tr><td class="empty" colspan="6">No price data for this theme’s tickers.</td></tr>';
+}
+
+// ---- editor ----
+function renderThemeList(){
+  const list = DATA.themes || [];
+  $('theme-list').innerHTML = list.map(t => `
+    <div class="theme-row">
+      <span class="tname">${t.name}</span>
+      <span class="tsyms">${t.symbols.join(', ') || '—'}</span>
+      ${t.builtin ? '<span class="builtin-tag">built-in</span>' : '<span></span>'}
+      <span style="display:flex;gap:6px">
+        <button class="btn" data-edit="${t.id}">Edit</button>
+        <button class="btn danger" data-del="${t.id}">Delete</button>
+      </span>
+    </div>`).join('') || '<div class="empty">No themes yet.</div>';
+  document.querySelectorAll('#theme-list [data-edit]').forEach(b => b.onclick = ()=>openForm(b.dataset.edit));
+  document.querySelectorAll('#theme-list [data-del]').forEach(b => b.onclick = ()=>deleteTheme(b.dataset.del));
+}
+function openForm(id){
+  editId = id ? Number(id) : null;
+  const t = (DATA.themes||[]).find(x => String(x.id)===String(id));
+  $('ef-name').value = t ? t.name : '';
+  $('ef-desc').value = t ? t.description : '';
+  $('ef-syms').value = t ? t.symbols.join(' ') : '';
+  $('ef-msg').textContent = '';
+  $('editor-form').classList.add('show');
+  $('ef-name').focus();
+}
+async function saveTheme(){
+  const name = $('ef-name').value.trim();
+  const symbols = $('ef-syms').value.split(/[\s,]+/).map(s=>s.trim().toUpperCase()).filter(Boolean);
+  if (!name) { $('ef-msg').textContent='Name required'; return; }
+  try {
+    const r = await fetch('/api/themes/save', { method:'POST',
+      body: JSON.stringify({ id: editId, name, description: $('ef-desc').value.trim(), symbols }) });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || 'save failed');
+    $('editor-form').classList.remove('show');
+    await load();
+  } catch(e){ $('ef-msg').textContent = e.message; }
+}
+async function deleteTheme(id){
+  if (!confirm('Delete this theme?')) return;
+  try { await fetch('/api/themes/delete', { method:'POST', body: JSON.stringify({ id: Number(id) }) }); await load(); }
+  catch(e){ /* fail-soft */ }
+}
+
+// ---- wiring ----
+document.querySelectorAll('#tf-toggle button').forEach(b => b.onclick = ()=>{
+  currentTF = b.dataset.tf;
+  document.querySelectorAll('#tf-toggle button').forEach(x=>x.classList.toggle('active', x===b));
+  load();
+});
+$('tail-select').onchange = e => { currentTail = Number(e.target.value); load(); };
+document.querySelectorAll('#rank-table thead th').forEach(th => th.onclick = ()=>{
+  const k = th.dataset.k; if (sortKey===k) sortDir=-sortDir; else { sortKey=k; sortDir = (k==='name')?1:-1; }
+  renderTable();
+});
+$('edit-btn').onclick = ()=>{ const p=$('editor-panel'); p.style.display = p.style.display==='none'?'block':'none'; if (p.style.display==='block') p.scrollIntoView({behavior:'smooth'}); };
+$('new-theme-btn').onclick = ()=>openForm(null);
+$('ef-save').onclick = saveTheme;
+$('ef-cancel').onclick = ()=>$('editor-form').classList.remove('show');
+
+async function load(){
+  try {
+    const r = await fetch(`/api/themes?timeframe=${currentTF}&tail=${currentTail}`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    DATA = await r.json();
+    if (DATA.error) throw new Error(DATA.error);
+    colorByKey = {};   // reassign palette in case themes changed
+    $('status').innerHTML = `as of ${DATA.date || '—'}<br>updated ${DATA.updated||''}`;
+    renderChart(); renderTable(); renderMovers(); renderTabs(); renderThemeList();
+  } catch(e){
+    $('status').textContent = 'no data';
+    $('rank-body').innerHTML = `<tr><td class="empty" colspan="9">failed to load — ${e.message}</td></tr>`;
+  }
+}
+load();
+</script>
+</body>
+</html>

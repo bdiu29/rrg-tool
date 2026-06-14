@@ -40,7 +40,7 @@ _MODULE_DIR = Path(__file__).resolve().parent
 # Chart assembly
 # ---------------------------------------------------------------------------
 
-def compute_rrg(tickers, benchmark, interval, tail=6, asof=None):
+def compute_rrg(tickers, benchmark, interval, tail=6, asof=None, close=None):
     """Returns {sectors: {ticker: {...}}, best: {...}, date: "YYYY-MM-DD"}.
 
     Display coords (`ratio`/`momentum`) drive the chart; the quadrant, phase,
@@ -49,8 +49,12 @@ def compute_rrg(tickers, benchmark, interval, tail=6, asof=None):
 
     `asof` ("YYYY-MM-DD") truncates history so the chart shows the RRG as of a
     past date. All windows are trailing, so rollback only removes head points.
+
+    `close` lets a caller inject a pre-built close panel (themes module → RRG of
+    synthetic theme indices); when None, `compute_series` fetches prices.
     """
-    series, date, close = signal.compute_series(tickers, benchmark, interval, asof=asof)
+    series, date, close = signal.compute_series(tickers, benchmark, interval,
+                                                asof=asof, close=close)
 
     bench = close[benchmark]
     bench_prices = bench.dropna()

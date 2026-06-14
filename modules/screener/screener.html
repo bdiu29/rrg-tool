@@ -9,15 +9,15 @@
   @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
 
   :root {
-    --bg: #0a0e14;
-    --panel: #111722;
-    --grid: #1c2533;
-    --ink: #e6edf3;
-    --dim: #8b94a3;
-    --accent: #ffb000;
-    --green: #2fbf8f;
-    --red: #e4596b;
-    --blue: #5b8dd9;
+    --bg: #ffffff;
+    --panel: #f4f7fc;
+    --grid: #d7e0ee;
+    --ink: #0e2148;
+    --dim: #5d6b85;
+    --accent: #16336e;
+    --green: #1a9d6b;
+    --red: #d1453b;
+    --blue: #2f6fb3;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -30,7 +30,7 @@
     padding: 28px;
     max-width: 1500px;
     margin: 0 auto;
-    background-image: radial-gradient(circle at 20% 0%, rgba(255,176,0,0.05), transparent 40%);
+    background-image: radial-gradient(circle at 20% 0%, rgba(22,51,110,0.08), transparent 40%);
   }
 
   .nav-link {
@@ -71,9 +71,9 @@
     border-radius: 5px; background: var(--grid); color: var(--dim);
     letter-spacing: 0.05em; margin-left: 6px;
   }
-  .pill.on   { background: rgba(47,191,143,0.16); color: var(--green); }
-  .pill.warn { background: rgba(255,176,0,0.14);  color: var(--accent); }
-  .pill.err  { background: rgba(228,89,107,0.16); color: var(--red); }
+  .pill.on   { background: rgba(26,157,107,0.20); color: #15724e; }
+  .pill.warn { background: rgba(22,51,110,0.22);  color: #16336e; }
+  .pill.err  { background: rgba(209,69,59,0.20); color: #a3322a; }
 
   .btn {
     background: var(--panel);
@@ -88,7 +88,7 @@
   }
   .btn:hover { border-color: var(--accent); color: var(--accent); }
   .btn:disabled { opacity: 0.4; cursor: default; }
-  .btn.primary { background: var(--accent); color: #0a0e14; border-color: var(--accent); font-weight: 600; }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); font-weight: 600; }
   .btn.primary:hover { opacity: 0.9; }
   .btn.small { font-size: 10px; padding: 4px 9px; }
 
@@ -109,7 +109,7 @@
     padding: 7px 12px;
     cursor: pointer;
   }
-  .toggle button.active { background: var(--accent); color: #0a0e14; font-weight: 600; }
+  .toggle button.active { background: var(--accent); color: #fff; font-weight: 600; }
 
   select, input[type="text"], input[type="number"] {
     background: var(--bg);
@@ -160,10 +160,10 @@
   th:hover { color: var(--accent); }
   th.sorted { color: var(--accent); }
   td {
-    padding: 8px 10px; border-bottom: 1px solid rgba(28,37,51,0.6);
+    padding: 8px 10px; border-bottom: 1px solid var(--grid);
     font-size: 11.5px; text-align: right; white-space: nowrap;
   }
-  tr:hover td { background: rgba(255,176,0,0.025); }
+  tr:hover td { background: rgba(22,51,110,0.06); }
   td .sym { font-weight: 600; cursor: pointer; }
   td .sym:hover { color: var(--accent); }
   .pos { color: var(--green); }
@@ -209,15 +209,15 @@
   .ch-toggle.on { opacity: 1; }
   .ch-toggle.unavail { cursor: not-allowed; opacity: 0.15; }
 
-  .alert-row { border-bottom: 1px solid rgba(28,37,51,0.6); padding: 8px 2px; font-size: 11px; }
+  .alert-row { border-bottom: 1px solid var(--grid); padding: 8px 2px; font-size: 11px; }
   .alert-row .meta { color: var(--dim); font-size: 9.5px; margin-top: 2px; }
   .kind-badge {
     display: inline-block; font-size: 8.5px; font-weight: 700; letter-spacing: 0.06em;
     padding: 1px 6px; border-radius: 4px; margin-right: 6px; text-transform: uppercase;
   }
-  .kind-pump { background: rgba(47,191,143,0.16); color: var(--green); }
-  .kind-dump { background: rgba(228,89,107,0.16); color: var(--red); }
-  .kind-info { background: rgba(91,141,217,0.16); color: var(--blue); }
+  .kind-pump { background: rgba(26,157,107,0.20); color: #15724e; }
+  .kind-dump { background: rgba(209,69,59,0.20); color: #a3322a; }
+  .kind-info { background: rgba(47,111,179,0.20); color: #245585; }
   .alert-row.acked { opacity: 0.45; }
 
   .footnote { font-size: 9.5px; color: var(--dim); margin-top: 10px; line-height: 1.6; }
@@ -263,6 +263,8 @@
       <a href="/rrg.html" class="nav-link" style="margin-left:14px">RRG →</a>
       <a href="/breadth.html" class="nav-link" style="margin-left:14px">Breadth →</a>
       <a href="/schwab.html" class="nav-link" style="margin-left:14px">Schwab →</a>
+      <a href="/rankings.html" class="nav-link" style="margin-left:14px">Rankings →</a>
+      <a href="/themes.html" class="nav-link" style="margin-left:14px">Themes →</a>
     </div>
     <h1>Stock Screener<span class="sub">filters · watchlists · pump/dump alerts</span></h1>
   </div>
@@ -959,25 +961,25 @@ function openBacktest(d) {
 
 function drawBacktestCharts(d) {
   const dark = {
-    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: '#0f1521',
-    font: { family: 'Spline Sans Mono, monospace', size: 10, color: '#8b94a3' },
+    paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: '#f4f7fc',
+    font: { family: 'Spline Sans Mono, monospace', size: 10, color: '#5d6b85' },
     margin: { l: 48, r: 16, t: 8, b: 28 }, showlegend: true,
     legend: { orientation: 'h', y: 1.12, font: { size: 9 } },
-    xaxis: { gridcolor: '#1c2533' }, yaxis: { gridcolor: '#1c2533' },
+    xaxis: { gridcolor: '#d7e0ee' }, yaxis: { gridcolor: '#d7e0ee' },
   };
   const cfg = { displaylogo: false, responsive: true, displayModeBar: false };
   if (d.equity && d.equity.dates) {
     Plotly.newPlot('bt-equity', [
       { x: d.equity.dates, y: d.equity.strategy, name: 'Strategy', mode: 'lines',
-        line: { color: '#ffb000', width: 1.6 } },
+        line: { color: '#16336e', width: 1.6 } },
       { x: d.equity.dates, y: d.equity.benchmark, name: 'SPY', mode: 'lines',
-        line: { color: '#5b8dd9', width: 1.2 } },
+        line: { color: '#2f6fb3', width: 1.2 } },
     ], { ...dark }, cfg);
   }
   if (d.histogram) {
     const h = d.histogram, centers = [];
     for (let i = 0; i < h.counts.length; i++) centers.push((h.edges[i] + h.edges[i + 1]) / 2);
-    const colors = centers.map(c => c >= 0 ? '#2fbf8f' : '#e4596b');
+    const colors = centers.map(c => c >= 0 ? '#1a9d6b' : '#d1453b');
     Plotly.newPlot('bt-hist', [
       { x: centers, y: h.counts, type: 'bar', marker: { color: colors } },
     ], { ...dark, showlegend: false, xaxis: { ...dark.xaxis, title: { text: 'trade return %', font: { size: 9 } } } }, cfg);
