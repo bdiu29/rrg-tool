@@ -97,6 +97,13 @@
     border: 1px solid currentColor; border-radius: 4px; padding: 1px 5px; }
   .call-in { color: var(--green); } .call-out { color: var(--red); } .call-hold { color: var(--blue); }
   .call-avoid { color: var(--dim); } .call-watch { color: #b8860b; }
+  .call-warn { color: #b8860b; background: rgba(184,134,11,0.12); }
+
+  /* static rotation-call key under the chart legend */
+  .call-key { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 10px;
+    padding-top: 9px; border-top: 1px solid var(--grid); font-size: 9.5px; color: var(--dim); }
+  .call-key .ck { display: inline-flex; align-items: center; gap: 4px; }
+  .call-key .dot { font-weight: 800; letter-spacing: 0.04em; }
 
   /* tables */
   table { width: 100%; border-collapse: collapse; }
@@ -119,7 +126,7 @@
   .pill.sm { min-width: 28px; height: 21px; font-size: 10px; border-radius: 11px; }
   .pill.na { background: var(--grid); color: var(--dim); }
 
-  .movers { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 14px; }
+  .movers { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 18px; margin-top: 18px; }
   @media (max-width: 1080px) { .movers { grid-template-columns: 1fr 1fr; } }
   .mover-card { background: var(--panel); border: 1px solid var(--grid); border-radius: 12px; padding: 14px 15px; }
   .mover-card h3 { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 11px;
@@ -200,6 +207,14 @@
     <div class="panel-title">Theme Rotation <span class="count" id="rrg-lens">—</span></div>
     <div class="chart-wrap"><svg id="chart" viewBox="0 0 600 600"></svg></div>
     <div class="legend" id="legend"></div>
+    <div class="call-key">
+      <span class="ck"><span class="dot call-in">IN</span> rotate in</span>
+      <span class="ck"><span class="dot call-out">OUT</span> rotate out</span>
+      <span class="ck"><span class="dot call-hold">HOLD</span> hold</span>
+      <span class="ck"><span class="dot call-watch">WATCH</span> wait / arming</span>
+      <span class="ck"><span class="dot call-avoid">AVOID</span> stay out</span>
+      <span class="ck"><span class="dot call-warn">⚠ w3/w5 ext</span> trim (extension)</span>
+    </div>
   </div>
 
   <!-- ranking -->
@@ -270,6 +285,7 @@ const PALETTE = ['#2f6fb3','#1a9d6b','#c0392b','#b8860b','#7b5bb5','#1f9aa8',
                  '#d1453b','#e07b1a','#5566d6','#974fc0','#0e8f7e','#a8527a'];
 const CALL_STYLE = {
   'ROTATE IN':{cls:'call-in',short:'IN'}, 'ROTATE OUT':{cls:'call-out',short:'OUT'},
+  '⚠️ w5 extended':{cls:'call-warn',short:'⚠ W5 EXT'}, '⚠️ w3 extended':{cls:'call-warn',short:'⚠ W3 EXT'},
   'HOLD':{cls:'call-hold',short:'HOLD'}, 'AVOID':{cls:'call-avoid',short:'AVOID'},
   'WATCH':{cls:'call-watch',short:'WATCH'} };
 
@@ -359,16 +375,22 @@ function renderChart(){
     const cs=CALL_STYLE[s.call]||CALL_STYLE['WATCH'];
     item.innerHTML=`<span class="swatch" style="background:${color}"></span>
       <span class="tk">${tagFor(s.name)}</span><span class="nm">${s.name}</span>
-      <span class="call-badge ${cs.cls}" title="${s.call_why||''}">${cs.short}</span>`;
+      ${s.conviction!=null?`<span class="conv-chip" style="margin-left:auto;font-weight:700;font-size:10px;color:${s.conviction>=0?'var(--green)':'var(--red)'}">${s.conviction>0?'+':''}${Math.round(s.conviction)}</span>`:''}
+      <span class="call-badge ${cs.cls}" style="margin-left:6px" title="${s.call_why||''}">${cs.short}</span>`;
     item.addEventListener('click', ()=>{ muted.has(k)?muted.delete(k):muted.add(k); renderChart(); });
     leg.appendChild(item); });
 }
 function showTip(ev,k,s,color){ const tt=$('tooltip'), n=s.ratio.length, r=s.ratio[n-1], m=s.momentum[n-1];
   const quad = r>=100?(m>=100?'Leading':'Weakening'):(m>=100?'Improving':'Lagging');
+  const retr = (s.retrace_pct!=null)?`<div class="tt-row">Retrace: <b>${(s.retrace_pct*100).toFixed(0)}%</b></div>`:'';
+  const ext  = (s.ext_ratio!=null)?`<div class="tt-row">Extension: <b>${s.ext_ratio.toFixed(2)}× w1</b></div>`:'';
+  const abc  = s.abc_type?`<div class="tt-row">Correction: <b>${s.abc_type}</b></div>`:'';
+  const div  = s.div_confluence?`<div class="tt-row">Divergence: <b>${s.div_confluence}</b></div>`:'';
+  const conv = s.conviction!=null?`<div class="tt-row">Conviction: <b style="color:${s.conviction>=0?'var(--green)':'var(--red)'}">${s.conviction>0?'+':''}${Math.round(s.conviction)}</b></div>`:'';
   tt.innerHTML=`<div class="tt-tk" style="color:${color}">${s.name}</div>
     <div class="tt-row">RS-Ratio: <b>${r.toFixed(2)}</b></div><div class="tt-row">RS-Mom: <b>${m.toFixed(2)}</b></div>
-    <div class="tt-row">Quadrant: <b>${quad}</b></div><div class="tt-row">Phase: <b>${s.phase||'—'}</b></div>
-    <div class="tt-row">Call: <b>${s.call||'—'}</b></div>`;
+    <div class="tt-row">Quadrant: <b>${quad}</b></div><div class="tt-row">Wave: <b>${s.wave_label||s.phase||'—'}</b></div>
+    ${retr}${ext}${abc}${div}${conv}<div class="tt-row">Call: <b>${s.call||'—'}</b></div>`;
   tt.style.opacity='1'; tt.style.left=(ev.clientX+16)+'px'; tt.style.top=(ev.clientY+16)+'px'; }
 function hideTip(){ $('tooltip').style.opacity='0'; }
 

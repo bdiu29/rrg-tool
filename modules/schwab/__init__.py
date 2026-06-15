@@ -27,7 +27,7 @@ except ImportError:
     yf = None
 
 from modules import Response
-from modules.rrg import compute_rrg, BENCHMARK, DEFAULT_TICKERS
+from modules.rrg import compute_rrg, BENCHMARK, DEFAULT_TICKERS, WARN_CALLS
 
 _MODULE_DIR = Path(__file__).resolve().parent
 _ROOT       = _MODULE_DIR.parent.parent   # rrg-tool/ — where .env lives
@@ -297,7 +297,9 @@ def _positions_with_signals():
         etf    = sym_etf.get(pos["symbol"])
         sig    = rrg_signals.get(etf, {}) if etf else {}
         call   = sig.get("call", "WATCH") if sig else "—"
-        action = CALL_TO_ACTION.get(call, "—")
+        # An Elliott-wave extension warning (w3/w5 nearing its Fib max) is its own
+        # call → TRIM, distinct from a hard ROTATE OUT → SELL.
+        action = "TRIM" if call in WARN_CALLS else CALL_TO_ACTION.get(call, "—")
         enriched.append({
             **pos,
             "sector_etf":   etf,

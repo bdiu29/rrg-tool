@@ -34,7 +34,11 @@ from .signal import DEFAULT_TICKERS, BENCHMARK, DEFAULTS
 FWD_HORIZONS = (1, 5, 10, 20)
 SEP_HORIZON  = 10           # horizon the walk-forward objective separates on
 TRADE_CAP    = 400
-CALL_ORDER   = ["ROTATE IN", "ROTATE OUT", "HOLD", "WATCH", "AVOID"]
+# The two extension warnings are first-class calls (own event-study rows). w5
+# extended is an exit-the-long signal; w3 extended is "hold but tighten".
+CALL_ORDER   = ["ROTATE IN", "ROTATE OUT", "⚠️ w5 extended", "⚠️ w3 extended",
+                "HOLD", "WATCH", "AVOID"]
+EXIT_CALLS   = ("ROTATE OUT", "AVOID", "⚠️ w5 extended")
 
 DEFAULT_EXIT = {
     "model":      "signal",   # signal | hold | atr
@@ -90,12 +94,13 @@ def _atr14(h, l, c):
 
 
 def _onsets(timeline):
-    """Ordered [(date, call)] keeping only the bars where the call *changed*."""
+    """Ordered [(date, call, conviction)] keeping only the bars where the call
+    *changed* (conviction taken at the onset bar)."""
     out, prev = [], None
     for d in sorted(timeline):
         call = timeline[d]["call"]
         if call != prev:
-            out.append((d, call))
+            out.append((d, call, timeline[d].get("conviction")))
             prev = call
     return out
 
@@ -113,7 +118,7 @@ def _event_records(calls, close_df, spy_arr, idx, lag):
         if tk not in close_df.columns:
             continue
         col = close_df[tk].to_numpy()
-        for d, call in _onsets(timeline):
+        for d, call, conv in _onsets(timeline):
             ei = int(idx.searchsorted(d + lag, side="right"))
             if ei >= n:
                 continue
@@ -127,7 +132,8 @@ def _event_records(calls, close_df, spy_arr, idx, lag):
                     fwd[h] = r
                     if np.isfinite(sbase) and sbase > 0 and np.isfinite(spy_arr[ei + h]):
                         ex[h] = r - (spy_arr[ei + h] / sbase - 1) * 100
-            recs.append({"call": call, "date": idx[ei], "fwd": fwd, "excess": ex})
+            recs.append({"call": call, "conviction": conv, "date": idx[ei],
+                         "fwd": fwd, "excess": ex})
     return recs
 
 
@@ -156,13 +162,36 @@ def _event_study(recs):
     return out
 
 
+def _confidence_study(recs, horizon=SEP_HORIZON):
+    """The probabilistic model's honest test: bucket ROTATE IN / ROTATE OUT onsets
+    by conviction and report forward excess per bucket. If higher conviction →
+    higher forward excess (monotonic), the confluence score is doing real work."""
+    buckets = [(0, 40), (40, 55), (55, 70), (70, 85), (85, 100)]
+    out = {"horizon": horizon, "rows": []}
+    for lo, hi in buckets:
+        ex = [r["excess"][horizon] for r in recs
+              if r["call"] == "ROTATE IN" and r.get("conviction") is not None
+              and lo <= r["conviction"] < hi and horizon in r["excess"]]
+        out["rows"].append({
+            "bucket": f"{lo}–{hi}", "n": len(ex),
+            "excess": _num(float(np.mean(ex))) if ex else None,
+            "win_rate": _num(100.0 * np.mean(np.array(ex) > 0)) if ex else None,
+        })
+    # crude monotonicity read: excess of the top populated bucket vs the bottom
+    vals = [(r["bucket"], r["excess"]) for r in out["rows"] if r["excess"] is not None]
+    out["monotone_hint"] = (vals[-1][1] - vals[0][1]) if len(vals) >= 2 else None
+    return out
+
+
 def _separation(recs, lo, hi, horizon=SEP_HORIZON, min_n=3):
-    """Mean excess of ROTATE IN minus mean excess of ROTATE OUT at `horizon`,
-    over onsets in (lo, hi]. NaN if either side is too thin to trust."""
+    """Mean excess of ROTATE IN minus mean excess of the bearish exit calls
+    (ROTATE OUT ∪ ⚠️ w5 extended) at `horizon`, over onsets in (lo, hi]. NaN if
+    either side is too thin to trust."""
+    out_calls = ("ROTATE OUT", "⚠️ w5 extended")
     ins  = [r["excess"][horizon] for r in recs
-            if r["call"] == "ROTATE IN"  and lo < r["date"] <= hi and horizon in r["excess"]]
+            if r["call"] == "ROTATE IN"     and lo < r["date"] <= hi and horizon in r["excess"]]
     outs = [r["excess"][horizon] for r in recs
-            if r["call"] == "ROTATE OUT" and lo < r["date"] <= hi and horizon in r["excess"]]
+            if r["call"] in out_calls       and lo < r["date"] <= hi and horizon in r["excess"]]
     if len(ins) < min_n or len(outs) < min_n:
         return float("nan")
     return float(np.mean(ins) - np.mean(outs))
@@ -204,7 +233,7 @@ def _simulate(calls, frames, spy_arr, idx, cfg, lag):
         atr = _atr14(h, l, c)
         events = _onsets(calls.get(tk, {}))
         last_exit = -1
-        for i, (d, call) in enumerate(events):
+        for i, (d, call, _conv) in enumerate(events):
             if call != "ROTATE IN":
                 continue
             ei = int(idx.searchsorted(d + lag, side="right"))
@@ -216,8 +245,8 @@ def _simulate(calls, frames, spy_arr, idx, cfg, lag):
             atr0 = atr[ei - 1] if ei - 1 >= 0 else np.nan
 
             forced, forced_is_signal = n - 1, False
-            for d2, call2 in events[i + 1:]:
-                if call2 in ("ROTATE OUT", "AVOID"):
+            for d2, call2, _c2 in events[i + 1:]:
+                if call2 in EXIT_CALLS:
                     fp = int(idx.searchsorted(d2 + lag, side="right"))
                     if fp < n:
                         forced, forced_is_signal = fp, True
@@ -299,8 +328,16 @@ def _equity_curve(trades, close_df, spy_close, idx):
     port    = (sym_ret.where(held).sum(axis=1) / n_held.replace(0, np.nan)).fillna(0.0)
     equity  = (1 + port).cumprod()
 
-    bench = spy_close.reindex(win_dates).ffill()
-    bench = bench / bench.iloc[0]
+    bench   = spy_close.reindex(win_dates).ffill()
+    bench   = bench / bench.iloc[0]
+
+    # Exposure-matched benchmark — SPY earned only on the days the strategy is
+    # actually invested (flat otherwise). This isolates sector selection from the
+    # cash drag of a selective long-only signal: strategy vs full-SPY mixes timing
+    # + selection, strategy vs matched-SPY is the apples-to-apples read.
+    invested  = (n_held > 0)
+    spy_dret  = bench.pct_change().fillna(0.0)
+    matched   = (1 + spy_dret * invested.astype(float)).cumprod()
 
     eq   = equity.to_numpy()
     peak = np.maximum.accumulate(eq)
@@ -311,11 +348,15 @@ def _equity_curve(trades, close_df, spy_close, idx):
         "dates":        [d.strftime("%Y-%m-%d") for d in win_dates],
         "strategy":     [_num(v) for v in eq],
         "benchmark":    [_num(v) for v in bench.to_numpy()],
+        "benchmark_matched": [_num(v) for v in matched.to_numpy()],
         "total_return": _num((eq[-1] - 1) * 100),
         "cagr":         _num((eq[-1] ** ann - 1) * 100),
         "max_drawdown": _num(max_dd),
         "sharpe":       _num(sharpe, 2),
         "bench_total_return": _num((bench.iloc[-1] - 1) * 100),
+        "bench_matched_return": _num((matched.iloc[-1] - 1) * 100),
+        "time_in_market": _num(invested.mean() * 100, 1),
+        "avg_positions":  _num(n_held.mean(), 2),
     }
 
 
@@ -349,6 +390,7 @@ def run_backtest(interval="1d", tail=6, exit_cfg=None, params=None):
 
     recs   = _event_records(calls, close, spy_arr, idx, lag)
     events = _event_study(recs)
+    confidence = _confidence_study(recs)
 
     frames = {tk: (ohlc["open"][tk].to_numpy(), ohlc["high"][tk].to_numpy(),
                    ohlc["low"][tk].to_numpy(), ohlc["close"][tk].to_numpy())
@@ -376,6 +418,7 @@ def run_backtest(interval="1d", tail=6, exit_cfg=None, params=None):
             "end":   idx[-1].strftime("%Y-%m-%d") if len(idx) else None,
         },
         "event_study":    events,
+        "confidence":     confidence,
         "stats":          stats,
         "equity":         equity,
         "histogram":      hist,
@@ -390,20 +433,21 @@ def run_backtest(interval="1d", tail=6, exit_cfg=None, params=None):
     }
 
 
-# Search grid — small on purpose (bounds runtime AND overfit).
+# Search grid — small on purpose (bounds runtime AND overfit). ZIGZAG_K shapes
+# the significant-swing detection (compute_series-affecting, so series are cached
+# by it); T_IN / T_WARN are the call-time conviction thresholds. The confluence
+# weights and Fibonacci ratios are theory/judgment-fixed and never searched.
 _GRID = {
-    "DIRECT_GATE": [0.45, 0.52, 0.60],
-    "MOVE_GATE":   [0.90, 1.20, 1.50],
-    "DIV_MARGIN":  [0.40, 0.60],
-    "TREND_ETA":   [0.80, 1.00],
-    "MOM_TAU":     [0.11],
+    "ZIGZAG_K": [1.25, 1.50, 2.00],
+    "T_IN":     [40.0, 50.0, 60.0],
+    "T_WARN":   [30.0, 40.0],
 }
 
 
 def walk_forward_search(interval="1d", tail=6, exit_cfg=None, folds=4):
-    """Expanding-window walk-forward over the gate params. Per fold: pick the
-    in-sample-best combo, score it out-of-sample. Recommend the combo with the
-    best mean OOS separation across folds (robust, not the global optimum)."""
+    """Expanding-window walk-forward over the wave-engine params. Per fold: pick
+    the in-sample-best combo, score it out-of-sample. Recommend the combo with
+    the best mean OOS separation across folds (robust, not the global optimum)."""
     series0, ohlc, idx, close, spy_close, spy_arr = _load(interval)
     if len(idx) < 200:
         return {"error": "not enough history for a walk-forward search"}
@@ -412,14 +456,15 @@ def walk_forward_search(interval="1d", tail=6, exit_cfg=None, folds=4):
     keys  = list(_GRID)
     combos = [dict(zip(keys, vals)) for vals in itertools.product(*(_GRID[k] for k in keys))]
 
-    # records per combo (compute_series cached by the (ETA, TAU) it depends on)
+    # records per combo (compute_series cached by ZIGZAG_K, the only param it
+    # depends on; the conviction thresholds are call-time in replay_calls)
     series_cache = {}
     per_combo = []
     for combo in combos:
-        sk = (combo["TREND_ETA"], combo["MOM_TAU"])
+        sk = combo["ZIGZAG_K"]
         if sk not in series_cache:
             s, _, _ = signal.compute_series(DEFAULT_TICKERS, BENCHMARK, interval,
-                                            params={"TREND_ETA": sk[0], "MOM_TAU": sk[1]})
+                                            params={"ZIGZAG_K": sk})
             series_cache[sk] = s
         calls = signal.replay_calls(series_cache[sk], tail, params=combo)
         recs  = _event_records(calls, close, spy_arr, idx, lag)

@@ -184,6 +184,7 @@
   .ab-out   { color: var(--red); }
   .ab-hold  { color: var(--blue); }
   .ab-watch { color: var(--accent); }
+  .ab-warn  { color: #b8860b; background: rgba(184,134,11,0.12); }
   .ab-avoid { color: var(--dim); }
 
   .progress-wrap { display: none; align-items: center; gap: 10px; font-size: 10px;
@@ -431,9 +432,12 @@ function compact(v) {
 }
 function rrgBadge(v) {
   if (!v) return '<span class="muted">—</span>';
-  const cls = { 'ROTATE IN': 'ab-in', 'ROTATE OUT': 'ab-out', 'HOLD': 'ab-hold',
-                'WATCH': 'ab-watch', 'AVOID': 'ab-avoid' }[v] || 'ab-avoid';
-  return `<span class="action-badge ${cls}">${v.replace('ROTATE ', '')}</span>`;
+  const map = { 'ROTATE IN': ['ab-in', 'IN'], 'ROTATE OUT': ['ab-out', 'OUT'],
+                'HOLD': ['ab-hold', 'HOLD'], 'WATCH': ['ab-watch', 'WATCH'],
+                'AVOID': ['ab-avoid', 'AVOID'],
+                '⚠️ w3 extended': ['ab-warn', '⚠ W3'], '⚠️ w5 extended': ['ab-warn', '⚠ W5'] };
+  const [cls, label] = map[v] || ['ab-avoid', v];
+  return `<span class="action-badge ${cls}">${label}</span>`;
 }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 

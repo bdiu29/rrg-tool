@@ -195,6 +195,7 @@
   .ab-hold  { color: var(--c-hold); }
   .ab-sell  { color: var(--c-sell); }
   .ab-watch { color: var(--c-watch); }
+  .ab-trim  { color: var(--c-watch); background: rgba(194,135,31,0.12); }
   .ab-avoid { color: var(--c-avoid); }
   .ab-none  { color: #4a5568; border-color: #4a5568; }
 
@@ -431,7 +432,7 @@ function pnlSign(v)  { return v >= 0 ? '+' : ''; }
 
 const ACTION_CLASS = {
   BUY: 'ab-buy', HOLD: 'ab-hold', SELL: 'ab-sell',
-  WATCH: 'ab-watch', AVOID: 'ab-avoid',
+  WATCH: 'ab-watch', TRIM: 'ab-trim', AVOID: 'ab-avoid',
 };
 
 function actionBadge(action) {

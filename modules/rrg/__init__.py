@@ -31,6 +31,7 @@ from .signal import (        # re-exported for schwab (intentional cross-module 
     DEFAULT_TICKERS,
     SECTOR_NAMES,
     BENCHMARK,
+    WARN_CALLS,
 )
 
 _MODULE_DIR = Path(__file__).resolve().parent

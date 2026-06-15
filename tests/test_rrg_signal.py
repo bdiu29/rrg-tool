@@ -1,10 +1,11 @@
 """
 Unit tests for the decoupled RRG signal math.
 
-The point of the refactor: the rotation calls run on a SIGNAL space that is
-σ-normalized about the TRUE boundary (RS-Ratio = 100), interval-independent, and
-honest at the quadrant line — while the chart's DISPLAY space is a cosmetic gain
-that always crosses 100 at the same point. These tests pin those invariants.
+Two layers are pinned here. (1) The chart's coordinate decoupling: SIGNAL space
+is σ-normalized about the TRUE boundary (RS-Ratio = 100) and the DISPLAY space is
+a cosmetic gain that always crosses 100 at the same point. (2) The Elliott-wave /
+Fibonacci engine that drives the rotation call off the raw RS line — wave labels,
+the call decision tree, and the no-lookahead confirmation lag.
 
 Run:  /usr/bin/python3 -m unittest discover tests
 """
@@ -49,46 +50,197 @@ class TestQuadrantBoundary(unittest.TestCase):
         self.assertEqual(signal._quadrant(99.9, 99.9), "Lagging")
 
 
+def _ws(trend="up", leg="impulse", wave="wave-3", retrace=np.nan, ext=np.nan,
+        fib_target=np.nan, fib_w1=np.nan, cur=np.nan, gp_q=0.0, ext_q=0.0,
+        div_rs="none", div_px="none", htf_div="none", ltf_div="none",
+        mtf_1mo=0.0, mtf_1d=0.0, mtf_1h=0.0):
+    return {"trend": trend, "leg_kind": leg, "wave": wave, "retrace": retrace,
+            "ext": ext, "fib_target": fib_target, "fib_w1": fib_w1, "cur": cur,
+            "gp_q": gp_q, "ext_q": ext_q, "div_rs": div_rs, "div_px": div_px,
+            "htf_div": htf_div, "ltf_div": ltf_div,
+            "mtf_1mo": mtf_1mo, "mtf_1d": mtf_1d, "mtf_1h": mtf_1h}
+
+
+class TestConviction(unittest.TestCase):
+    """The probabilistic confluence score and the thresholds that route it."""
+
+    def test_factors_accumulate_no_single_one_mandatory(self):
+        # No single factor is required — adding any confluence only raises
+        # conviction, and there are multiple independent paths up (probabilistic,
+        # not AND-gated).
+        gp_only = signal._conviction(_ws("up", "corrective", "wave-2", gp_q=1.0))[0]
+        gp_div = signal._conviction(_ws("up", "corrective", "wave-2", gp_q=1.0,
+                                        div_rs="bull", div_px="bull"))[0]
+        gp_mtf = signal._conviction(_ws("up", "corrective", "wave-2", gp_q=1.0,
+                                        mtf_1d=1.0, mtf_1mo=1.0))[0]
+        self.assertGreater(gp_div, gp_only)     # divergence path lifts it
+        self.assertGreater(gp_mtf, gp_only)     # multi-timeframe alignment path lifts it
+
+    def test_partial_depth_is_partial_conviction(self):
+        deep = signal._conviction(_ws("up", "corrective", "wave-2", gp_q=1.0))[0]
+        shallow = signal._conviction(_ws("up", "corrective", "wave-2", gp_q=0.2))[0]
+        self.assertGreater(deep, shallow)
+
+    def test_score_is_signed_and_clamped(self):
+        bear = signal._conviction(_ws("up", "impulse", "wave-5", ext_q=1.0,
+                                      div_rs="bear", div_px="bear"))[0]
+        self.assertLess(bear, 0)
+        self.assertGreaterEqual(bear, signal.CONV_LO)
+        bull = signal._conviction(_ws("up", "corrective", "wave-2", gp_q=1.0,
+                                      div_rs="bull", div_px="bull", htf_div="bull", ltf_div="bull"))[0]
+        self.assertLessEqual(bull, signal.CONV_HI)
+
+
 class TestRotationCall(unittest.TestCase):
-    def test_committed_leg_rotates_in(self):
-        ratios  = [97.0, 97.5, 98.0, 98.5, 99.0, 99.5]      # rising, still <100 (Improving)
-        moments = [100.2, 100.6, 101.0, 101.4, 101.8, 102.2]
-        q = signal._quadrant(ratios[-1], moments[-1])
-        self.assertEqual(q, "Improving")
-        _, heading, _ = signal._tail_heading(ratios, moments)
-        call, _ = signal._rotation_call(
-            ratios, moments, q,
-            signal._accum(ratios, moments), signal._distrib(ratios, moments),
-            heading, phase="impulse ↑ (wave 3/5)")
+    """Conviction thresholds → the 7-value call, with wave context selecting it."""
+
+    def test_high_conviction_wave2_rotates_in(self):
+        call, _ = signal._rotation_call(_ws("up", "corrective", "wave-2", gp_q=1.0,
+                                            div_rs="bull", div_px="bull"))
         self.assertEqual(call, "ROTATE IN")
 
-    def test_corrective_chop_does_not_rotate(self):
-        ratios  = [97.0, 98.0, 97.4, 98.2, 97.6, 98.1]      # zig-zag → low directness
-        moments = [100.1, 101.0, 100.4, 101.1, 100.5, 101.0]
-        q = signal._quadrant(ratios[-1], moments[-1])
-        self.assertEqual(q, "Improving")
-        _, heading, _ = signal._tail_heading(ratios, moments)
-        call, _ = signal._rotation_call(
-            ratios, moments, q,
-            signal._accum(ratios, moments), signal._distrib(ratios, moments),
-            heading, phase="bounce (wave B)")
-        self.assertNotEqual(call, "ROTATE IN")
+    def test_arming_wave2_is_watch(self):
+        # shallow depth, no divergence → conviction between T_WATCH and T_IN
+        call, _ = signal._rotation_call(_ws("up", "corrective", "wave-2", gp_q=0.4),
+                                        params={"T_IN": 60.0, "T_WATCH": 15.0})
+        self.assertEqual(call, "WATCH")
 
-    def test_params_thread_through_without_global_mutation(self):
-        """A tiny net move clears a low MOVE_GATE but not a high one — and the
-        module DEFAULTS are untouched afterward (thread-safe for live requests)."""
-        ratios  = [99.0, 99.1, 99.2, 99.3, 99.4, 99.5]      # all <100 → Improving
-        moments = [100.0, 100.1, 100.2, 100.3, 100.4, 100.5]
-        q = signal._quadrant(ratios[-1], moments[-1])
-        self.assertEqual(q, "Improving")
-        _, heading, _ = signal._tail_heading(ratios, moments)
-        args = (ratios, moments, q, signal._accum(ratios, moments),
-                signal._distrib(ratios, moments), heading, "impulse ↑ (wave 3/5)")
-        loose, _ = signal._rotation_call(*args, params={"MOVE_GATE": 0.1, "DIRECT_GATE": 0.3})
-        tight, _ = signal._rotation_call(*args, params={"MOVE_GATE": 5.0})
-        self.assertEqual(loose, "ROTATE IN")
-        self.assertNotEqual(tight, "ROTATE IN")
-        self.assertEqual(signal.DEFAULTS["MOVE_GATE"], 0.90)   # unchanged
+    def test_wave3_extension_is_its_own_call(self):
+        call, _ = signal._rotation_call(_ws("up", "impulse", "wave-3", ext_q=1.0,
+                                            div_rs="bear", div_px="bear"))
+        self.assertEqual(call, "⚠️ w3 extended")
+        self.assertIn(call, signal.WARN_CALLS)
+
+    def test_wave3_not_extended_holds(self):
+        call, _ = signal._rotation_call(_ws("up", "impulse", "wave-3", ext_q=0.0))
+        self.assertEqual(call, "HOLD")
+
+    def test_wave5_at_target_is_its_own_call(self):
+        call, _ = signal._rotation_call(_ws("up", "impulse", "wave-5", ext_q=1.0,
+                                            div_rs="bear", div_px="bear"))
+        self.assertEqual(call, "⚠️ w5 extended")
+
+    def test_no_clean_setup_is_watch(self):
+        self.assertEqual(signal._rotation_call(_ws(trend="ambiguous", wave="—"))[0], "WATCH")
+        self.assertEqual(signal._rotation_call(_ws(trend="none", wave="—"))[0], "WATCH")
+
+    def test_downtrend_bounce_into_pocket_rotates_out(self):
+        call, _ = signal._rotation_call(_ws("down", "corrective", "wave-2", gp_q=1.0,
+                                            div_rs="bear", div_px="bear"))
+        self.assertEqual(call, "ROTATE OUT")
+
+    def test_downtrend_impulse_avoids(self):
+        call, _ = signal._rotation_call(_ws("down", "impulse", "wave-3", ext_q=1.0))
+        self.assertEqual(call, "AVOID")
+
+    def test_thresholds_thread_through_without_global_mutation(self):
+        ws = _ws("up", "corrective", "wave-2", gp_q=1.0)     # GP-only conviction
+        self.assertEqual(signal._rotation_call(ws, params={"T_IN": 999.0})[0], "WATCH")
+        self.assertEqual(signal._rotation_call(ws, params={"T_IN": 10.0})[0], "ROTATE IN")
+        self.assertEqual(signal.DEFAULTS["T_IN"], 40.0)      # default, unchanged by calls
+
+
+def _impulse_rs():
+    """A clean 1-2-3-4-5 RS line: dip (start), w1 up, deep w2, big w3, shallow
+    w4, w5 up — exercises every wave label."""
+    def leg(a, b, n):
+        return list(np.linspace(a, b, n))[1:]
+    seq = ([105] + leg(105, 95, 12) + leg(95, 115, 22) + leg(115, 101, 15)
+           + leg(101, 160, 32) + leg(160, 150, 12) + leg(150, 185, 24))
+    return pd.Series(seq, index=pd.bdate_range("2022-06-01", periods=len(seq)))
+
+
+class TestWaveEngine(unittest.TestCase):
+    def test_zigzag_swings_significant_and_alternating(self):
+        piv = signal._zigzag_swings(_impulse_rs(), signal.DEFAULTS["ZIGZAG_K"])
+        kinds = [p["kind"] for p in piv]
+        self.assertTrue(all(kinds[i] != kinds[i + 1] for i in range(len(kinds) - 1)))
+        self.assertGreaterEqual(len(piv), 4)
+        # every recorded swing exceeds the volatility threshold → no micro-noise
+        spans = [abs(piv[i + 1]["price"] - piv[i]["price"]) for i in range(len(piv) - 1)]
+        self.assertTrue(min(spans) > 1.0)   # synthetic legs are ~10-60 RS units
+
+    def test_features_label_the_full_impulse(self):
+        # the idealized clean legs need a lower ZigZag threshold than noisy real
+        # data; the labeling logic under test is unchanged by k.
+        feats = signal._wave_features(_impulse_rs(), {"ZIGZAG_K": 0.7})
+        labels = set(feats["wave_label"].unique())
+        self.assertTrue({"wave-2", "wave-3", "wave-4", "wave-5"} <= labels)
+
+    def test_no_lookahead(self):
+        """A wave feature at date d is identical whether or not later bars exist —
+        the confirmation lag (and the forward-only ZigZag fold) makes the backtest
+        replay honest. Random walks exercise the same-kind-pivot collapse that a
+        clean impulse never triggers."""
+        rng = np.random.default_rng(7)
+        s = pd.Series(np.cumsum(rng.normal(0, 2, 600)) + 200,
+                      index=pd.bdate_range("2021-01-04", periods=600))
+        full = signal._wave_features(s, None)
+        cut = len(s) - 60
+        trunc = signal._wave_features(s.iloc[:cut], None)
+        for c in ("wv_trend", "wv_leg", "wave_label", "abc_type", "div_rs", "div_px"):
+            self.assertEqual(full[c].iloc[:cut].astype(str).tolist(),
+                             trunc[c].astype(str).tolist(), f"{c} leaked future data")
+        for c in ("retrace_pct", "ext_ratio", "c_tgt_lo", "c_tgt_hi"):
+            a, b = full[c].iloc[:cut].to_numpy(), trunc[c].to_numpy()
+            self.assertTrue(np.allclose(np.nan_to_num(a, nan=-1e9),
+                                        np.nan_to_num(b, nan=-1e9)), f"{c} leaked")
+
+    def test_abc_correction_off_a_wave5_top(self):
+        """After a wave-5 top the engine reads an A-B-C correction: wave A → ROTATE
+        OUT, a zigzag wave B → ROTATE OUT (sell the bounce), wave C into the prior
+        wave-4 / target zone → WATCH (bottoming setup)."""
+        def leg(a, b, n):
+            return list(np.linspace(a, b, n))[1:]
+        seq = ([105] + leg(105, 95, 12) + leg(95, 115, 22) + leg(115, 101, 15)
+               + leg(101, 160, 32) + leg(160, 150, 12) + leg(150, 185, 24)   # 1-2-3-4-5
+               + leg(185, 158, 16) + leg(158, 168, 10) + leg(168, 148, 16))  # A-B-C
+        s = pd.Series(seq, index=pd.bdate_range("2022-01-03", periods=len(seq)))
+        feats = signal._wave_features(s, {"ZIGZAG_K": 0.7})
+        abc = feats[feats["wv_leg"] == "abc"]
+        self.assertTrue({"wave-A", "wave-B", "wave-C"} <= set(abc["wave_label"]))
+
+        def call_of(row):
+            ws = {"trend": row.wv_trend, "leg_kind": row.wv_leg, "wave": row.wave_label,
+                  "retrace": row.retrace_pct, "ext": row.ext_ratio, "fib_target": row.fib_target,
+                  "fib_w1": row.fib_w1, "gp_q": row.gp_q, "ext_q": row.ext_q, "cur": row.cur_rs,
+                  "abc_type": row.abc_type, "c_tgt_lo": row.c_tgt_lo, "c_tgt_hi": row.c_tgt_hi,
+                  "w4_zone": row.w4_zone, "div_rs": row.div_rs, "div_px": row.div_px}
+            return signal._rotation_call(ws, None)[0]
+
+        # wave A → ROTATE OUT (correction underway), independent of conviction
+        a_rows = abc[abc["wave_label"] == "wave-A"]
+        self.assertEqual(call_of(a_rows.iloc[-1]), "ROTATE OUT")
+
+
+class TestDivergence(unittest.TestCase):
+    def test_rsi_bounds(self):
+        s = pd.Series(np.r_[np.linspace(100, 130, 40), np.linspace(130, 115, 20)])
+        r = signal._rsi(s).dropna()
+        self.assertTrue((r >= 0).all() and (r <= 100).all())
+
+    def test_bearish_divergence_on_a_lower_momentum_high(self):
+        """Price prints a higher high on a slower climb → RSI lower → bearish."""
+        def leg(a, b, n):
+            return list(np.linspace(a, b, n))[1:]
+        seq = [100] + leg(100, 130, 20) + leg(130, 118, 12) + leg(118, 133, 40)
+        s = pd.Series(seq, index=pd.bdate_range("2022-01-03", periods=len(seq)))
+        feats = signal._wave_features(s, None, price=s)
+        self.assertEqual(feats["div_rs"].iloc[-1], "bear")
+
+    def test_divergence_raises_wave2_conviction(self):
+        base = dict(trend="up", leg_kind="corrective", wave="wave-2", gp_q=0.4, ext_q=0.0,
+                    retrace=0.65, ext=np.nan, fib_target=np.nan, fib_w1=np.nan, cur=100.0,
+                    abc_type="—", c_tgt_lo=np.nan, c_tgt_hi=np.nan, w4_zone=np.nan,
+                    htf_div="none", ltf_div="none")
+        no_div = signal._conviction({**base, "div_rs": "none", "div_px": "none"})[0]
+        with_div = signal._conviction({**base, "div_rs": "bull", "div_px": "bull"})[0]
+        self.assertGreater(with_div, no_div)
+
+    def test_confluence_note_lists_agreeing_sources(self):
+        ws = {"div_rs": "bull", "div_px": "bull", "htf_div": "bull", "ltf_div": "none"}
+        self.assertEqual(signal._confluence_note(ws, "bull"), " · confluence: RS+price+HTF")
+        self.assertEqual(signal._confluence_note(ws, "bear"), "")
 
 
 # ---------------------------------------------------------------------------
@@ -144,7 +296,7 @@ class TestComputeSeries(unittest.TestCase):
     def test_replay_calls_emits_valid_calls(self):
         series, _, _ = signal.compute_series(["XLK", "XLP"], "SPY", "1d")
         calls = signal.replay_calls(series, tail=6)
-        valid = {"ROTATE IN", "ROTATE OUT", "HOLD", "AVOID", "WATCH"}
+        valid = {"ROTATE IN", "ROTATE OUT", "HOLD", "AVOID", "WATCH"} | set(signal.WARN_CALLS)
         self.assertEqual(set(calls), {"XLK", "XLP"})
         for timeline in calls.values():
             self.assertTrue(timeline)

@@ -221,6 +221,14 @@
   .aside-h2-spaced { margin-top: 20px; }
 
   /* Per-sector action call badge on legend rows */
+  .legend-item .conv-chip {
+    margin-left: auto; font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums;
+    min-width: 26px; text-align: right;
+  }
+  .conv-chip.conv-pos { color: #2ecc71; }
+  .conv-chip.conv-neg { color: #e05563; }
+  .legend-item.low-conf { opacity: 0.4; }            /* below the min-confidence slider */
+  .legend-item.low-conf .conv-chip { opacity: 0.7; }
   .legend-item .call-badge {
     margin-left: 8px;
     font-size: 8.5px;
@@ -240,6 +248,7 @@
   .call-hold  { color: #4f9be8; }
   .call-avoid { color: #8b94a3; }
   .call-watch { color: #d9943a; }
+  .call-warn  { color: #e8a33d; background: rgba(232,163,61,0.14); }
   .legend-item .nm.has-call { margin-left: 0; }
 
   /* Rotation Calls panel */
@@ -444,6 +453,10 @@
         <span class="ctl-label">Tail · <span id="tail-val">6</span></span>
         <input type="range" id="tail-slider" class="slider" min="3" max="12" step="1" value="6">
       </div>
+      <div class="ctl">
+        <span class="ctl-label">Min confidence · <span id="conf-val">50</span></span>
+        <input type="range" id="conf-slider" class="slider" min="50" max="99" step="1" value="50">
+      </div>
       <div class="meta" id="meta">—</div>
     </div>
   </header>
@@ -554,12 +567,26 @@ const QUAD_COLOR = { Leading: '#2ecc71', Improving: '#4f9be8', Weakening: '#d994
 
 // Action calls → CSS class + display label. Keys match server's `call` field.
 const CALL_STYLE = {
-  'ROTATE IN':  { cls: 'call-in',    short: 'IN'    },
-  'ROTATE OUT': { cls: 'call-out',   short: 'OUT'   },
-  'HOLD':       { cls: 'call-hold',  short: 'HOLD'  },
-  'AVOID':      { cls: 'call-avoid', short: 'AVOID' },
-  'WATCH':      { cls: 'call-watch', short: 'WATCH' },
+  'ROTATE IN':      { cls: 'call-in',    short: 'IN'     },
+  'ROTATE OUT':     { cls: 'call-out',   short: 'OUT'    },
+  '⚠️ w5 extended': { cls: 'call-warn',  short: '⚠ W5 EXT' },
+  '⚠️ w3 extended': { cls: 'call-warn',  short: '⚠ W3 EXT' },
+  'HOLD':           { cls: 'call-hold',  short: 'HOLD'   },
+  'AVOID':          { cls: 'call-avoid', short: 'AVOID'  },
+  'WATCH':          { cls: 'call-watch', short: 'WATCH'  },
 };
+// Signed conviction (−70..+99) — a relative confluence reading, not a probability.
+// The "Min confidence" slider dims sectors whose |conviction| is below it, so you
+// can focus on the strongest setups (bullish or bearish).
+let minConf = +(localStorage.getItem('rrgMinConf') || 50);
+function convChip(v) {
+  if (v == null) return '';
+  const cls = v >= 0 ? 'conv-pos' : 'conv-neg';
+  return `<span class="conv-chip ${cls}" title="confluence conviction (−70..+99)">${v > 0 ? '+' : ''}${Math.round(v)}</span>`;
+}
+// Event-study display order (matches the server's CALL_ORDER).
+const CALL_ORDER = ['ROTATE IN', 'ROTATE OUT', '⚠️ w5 extended', '⚠️ w3 extended',
+                    'HOLD', 'WATCH', 'AVOID'];
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, attrs = {}) => {
@@ -731,10 +758,12 @@ function render(data) {
     const s = sectors[k];
     const color = colorFor(k);
     const item = document.createElement('div');
-    item.className = 'legend-item' + (muted.has(k) ? ' muted' : '');
+    const lowConf = s.conviction != null && Math.abs(s.conviction) < minConf;
+    item.className = 'legend-item' + (muted.has(k) ? ' muted' : '') + (lowConf ? ' low-conf' : '');
     const cs = CALL_STYLE[s.call] || CALL_STYLE['WATCH'];
     item.innerHTML = `<span class="swatch" style="background:${color}"></span>
                       <span class="tk">${k}</span><span class="nm has-call">${s.name}</span>
+                      ${convChip(s.conviction)}
                       <span class="call-badge ${cs.cls}" title="${s.call_why || ''}">${cs.short}</span>`;
     item.addEventListener('click', () => {
       muted.has(k) ? muted.delete(k) : muted.add(k);
@@ -759,12 +788,27 @@ function showTip(ev, k, s, color) {
   const r = s.ratio[n - 1], m = s.momentum[n - 1];
   const quad = r >= 100 ? (m >= 100 ? 'Leading' : 'Weakening')
                         : (m >= 100 ? 'Improving' : 'Lagging');
+  const retr = (s.retrace_pct != null) ? `<div class="tt-row">Retrace: <b>${(s.retrace_pct*100).toFixed(0)}%</b></div>` : '';
+  const ext  = (s.ext_ratio != null)   ? `<div class="tt-row">Extension: <b>${s.ext_ratio.toFixed(2)}× w1</b></div>` : '';
+  const fib  = (s.fib_target != null)  ? `<div class="tt-row">Fib target: <b>${s.fib_target.toFixed(2)}</b></div>` : '';
+  const abc  = s.abc_type ? `<div class="tt-row">Correction: <b>${s.abc_type}</b>${s.c_target_lo != null ? ` · C target ${s.c_target_lo.toFixed(1)}–${s.c_target_hi.toFixed(1)}` : ''}</div>` : '';
+  const div  = s.div_confluence ? `<div class="tt-row">Divergence: <b>${s.div_confluence}</b></div>` : '';
+  const warn = (s.call || '').startsWith('⚠️') ? `<div class="tt-row" style="color:#d9943a">${s.call}</div>` : '';
+  let conv = '';
+  if (s.conviction != null) {
+    const fac = (s.conviction_factors || [])
+      .map(f => `<span style="color:${f[1] >= 0 ? '#2ecc71' : '#e05563'}">${f[0]} ${f[1] > 0 ? '+' : ''}${f[1]}</span>`)
+      .join(' · ');
+    conv = `<div class="tt-row" style="margin-top:4px">Conviction: <b style="color:${s.conviction >= 0 ? '#2ecc71' : '#e05563'}">${s.conviction > 0 ? '+' : ''}${Math.round(s.conviction)}</b></div>`
+         + (fac ? `<div class="tt-row" style="font-size:10px">${fac}</div>` : '');
+  }
   tt.innerHTML = `<div class="tt-tk" style="color:${color}">${k}</div>
     <div class="tt-row">${s.name}</div>
     <div class="tt-row">RS-Ratio: <b>${r.toFixed(2)}</b></div>
     <div class="tt-row">RS-Mom: <b>${m.toFixed(2)}</b></div>
     <div class="tt-row">Quadrant: <b>${quad}</b></div>
-    <div class="tt-row">Phase: <b>${s.phase || '—'}</b></div>`;
+    <div class="tt-row">Wave: <b>${s.wave_label || s.phase || '—'}</b></div>
+    ${retr}${ext}${fib}${abc}${div}${warn}${conv}`;
   tt.style.opacity = '1';
   tt.style.left = (ev.clientX + 16) + 'px';
   tt.style.top = (ev.clientY + 16) + 'px';
@@ -890,13 +934,13 @@ function buildCalls(data) {
   const s = data.sectors;
   const keys = Object.keys(s);
 
-  // Split into rotate-in vs rotate-out buckets, each ranked by conviction.
+  // Split into rotate-in vs reduce buckets, each ranked by conviction.
   // IN bucket = ROTATE IN, ranked by accumulation (early-upside) score.
-  // OUT bucket = ROTATE OUT, ranked by distribution (rolling-over) score.
+  // OUT bucket = ROTATE OUT + the extension warnings (trim/reduce), by distribution.
   const ins = keys.filter(k => s[k].call === 'ROTATE IN')
     .map(k => ({ k, score: s[k].accum, ...s[k] }))
     .sort((a, b) => b.score - a.score);
-  const outs = keys.filter(k => s[k].call === 'ROTATE OUT')
+  const outs = keys.filter(k => s[k].call === 'ROTATE OUT' || (s[k].call || '').startsWith('⚠️'))
     .map(k => ({ k, score: s[k].distrib, ...s[k] }))
     .sort((a, b) => b.score - a.score);
 
@@ -947,6 +991,18 @@ function wireToggle(id, onPick) {
   });
 }
 wireToggle('tf-toggle', (d) => { currentTF = d.tf; muted.clear(); });
+
+// Min-confidence slider — re-render only (no refetch); persist the choice.
+(function initConfSlider() {
+  const sl = $('conf-slider');
+  sl.value = minConf; $('conf-val').textContent = minConf;
+  sl.addEventListener('input', () => { $('conf-val').textContent = sl.value; });
+  sl.addEventListener('change', () => {
+    minConf = +sl.value;
+    localStorage.setItem('rrgMinConf', minConf);
+    if (lastData) render(lastData);
+  });
+})();
 
 // Tail slider: update the label live, refetch on release.
 const slider = $('tail-slider');
@@ -1118,18 +1174,21 @@ function renderBacktest(d) {
   html += btStat(s.n_trades ?? 0, 'Trades');
   html += btStat(s.win_rate != null ? Math.round(s.win_rate) + '%' : '—', 'Win rate');
   html += btStat(fmtPct(eq.total_return), 'Strategy', 'bt-v ' + signCls(eq.total_return));
-  html += btStat(fmtPct(eq.bench_total_return), 'SPY', 'bt-v ' + signCls(eq.bench_total_return));
+  html += btStat(fmtPct(eq.bench_matched_return), 'SPY (matched)', 'bt-v ' + signCls(eq.bench_matched_return));
+  html += btStat(fmtPct(eq.bench_total_return), 'SPY (always in)', 'bt-v ' + signCls(eq.bench_total_return));
+  html += btStat(eq.time_in_market != null ? Math.round(eq.time_in_market) + '%' : '—', 'Time in mkt');
   html += btStat(fmtPct(eq.max_drawdown), 'Max DD', 'bt-v neg');
   html += btStat(eq.sharpe != null ? (+eq.sharpe).toFixed(2) : '—', 'Sharpe');
   html += '</div>';
+  html += '<div class="bt-note">Strategy is long-only and in cash when no ROTATE IN is active (time in market above). <b>SPY (matched)</b> = SPY earning only on the days the strategy is invested — the apples-to-apples read (isolates sector selection from cash drag); <b>SPY (always in)</b> is fully invested the whole window.</div>';
 
   html += '<div class="bt-section-title">Forward return by call type — excess vs SPY (does the call predict?)</div>';
   html += '<table class="bt-table"><thead><tr><th>Call</th><th>Onsets</th>';
   HZ.forEach(h => html += `<th>+${h}d</th>`);
   html += '<th>+10d win</th></tr></thead><tbody>';
-  ['ROTATE IN', 'ROTATE OUT', 'HOLD', 'WATCH', 'AVOID'].forEach(call => {
+  CALL_ORDER.forEach(call => {
     const row = es[call]; if (!row) return;
-    const cls = call === 'ROTATE IN' ? 'call-in' : (call === 'ROTATE OUT' ? 'call-out' : '');
+    const cls = (CALL_STYLE[call] || {}).cls || '';
     html += `<tr><td class="${cls}">${call}</td><td>${row.n_onsets}</td>`;
     HZ.forEach(h => {
       const ex = row.horizons[h] ? row.horizons[h].excess : null;
@@ -1140,6 +1199,20 @@ function renderBacktest(d) {
   });
   html += '</tbody></table>';
   html += '<div class="bt-note">Excess = the sector\'s return minus SPY over the same window, averaged across signal onsets. A working tool shows ROTATE IN positive and ROTATE OUT negative.</div>';
+
+  // Confidence buckets — the probabilistic model's own test.
+  if (d.confidence && d.confidence.rows) {
+    const cf = d.confidence;
+    html += `<div class="bt-section-title">ROTATE IN by conviction bucket — excess vs SPY at +${cf.horizon}d</div>`;
+    html += '<table class="bt-table"><thead><tr><th>Conviction</th><th>Onsets</th><th>Excess</th><th>Win</th></tr></thead><tbody>';
+    cf.rows.forEach(r => {
+      html += `<tr><td>${r.bucket}</td><td>${r.n}</td>`
+            + `<td class="${signCls(r.excess)}">${r.excess == null ? '—' : fmtPct(r.excess)}</td>`
+            + `<td>${r.win_rate == null ? '—' : Math.round(r.win_rate) + '%'}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    html += `<div class="bt-note">If higher conviction → higher excess (monotone), the confluence score is doing real work. ${cf.monotone_hint != null ? 'Top−bottom spread: ' + fmtPct(cf.monotone_hint) + '.' : ''} Small sample — read as direction, not precision.</div>`;
+  }
 
   if (d.walk_forward) {
     const w = d.walk_forward;
@@ -1170,8 +1243,9 @@ function renderBacktest(d) {
 
   if (window.Plotly && eq.dates) {
     Plotly.newPlot('bt-equity', [
-      { x: eq.dates, y: eq.strategy,  name: 'Strategy', mode: 'lines', line: { color: '#3ddc84', width: 2 } },
-      { x: eq.dates, y: eq.benchmark, name: 'SPY',      mode: 'lines', line: { color: '#8b94a3', width: 1.5, dash: 'dot' } },
+      { x: eq.dates, y: eq.strategy,         name: 'Strategy',        mode: 'lines', line: { color: '#3ddc84', width: 2 } },
+      { x: eq.dates, y: eq.benchmark_matched, name: 'SPY (matched)',  mode: 'lines', line: { color: '#d9943a', width: 1.5 } },
+      { x: eq.dates, y: eq.benchmark,         name: 'SPY (always in)', mode: 'lines', line: { color: '#8b94a3', width: 1.5, dash: 'dot' } },
     ], plotlyLayout(true), { displayModeBar: false, responsive: true });
   }
   if (window.Plotly && d.histogram) {
@@ -1188,10 +1262,10 @@ function backtestMarkdown(d) {
   const c = d.config || {}, s = d.stats || {}, eq = d.equity || {}, es = d.event_study || {};
   let m = `# RRG backtest — ${c.interval} (${c.start} → ${c.end})\n\n`;
   m += `Trades ${s.n_trades || 0} · win ${s.win_rate != null ? Math.round(s.win_rate) + '%' : '—'} · `
-     + `strategy ${fmtPct(eq.total_return)} vs SPY ${fmtPct(eq.bench_total_return)} · maxDD ${fmtPct(eq.max_drawdown)}\n\n`;
+     + `strategy ${fmtPct(eq.total_return)} · SPY-matched ${fmtPct(eq.bench_matched_return)} · SPY-always ${fmtPct(eq.bench_total_return)} · time-in-mkt ${eq.time_in_market != null ? Math.round(eq.time_in_market) + '%' : '—'} · maxDD ${fmtPct(eq.max_drawdown)}\n\n`;
   m += `## Forward excess vs SPY by call\n\n| Call | Onsets | ${HZ.map(h => '+' + h + 'd').join(' | ')} |\n`;
   m += `|---|---|${HZ.map(() => '---').join('|')}|\n`;
-  ['ROTATE IN', 'ROTATE OUT', 'HOLD', 'WATCH', 'AVOID'].forEach(call => {
+  CALL_ORDER.forEach(call => {
     const r = es[call]; if (!r) return;
     m += `| ${call} | ${r.n_onsets} | ${HZ.map(h => r.horizons[h] ? fmtPct(r.horizons[h].excess) : '—').join(' | ')} |\n`;
   });
