@@ -159,6 +159,19 @@ class TestGoldenPocket(unittest.TestCase):
         self.assertTrue(np.isnan(g["gp_retrace"]))
 
 
+class TestFlagAndExhaustionPanels(unittest.TestCase):
+    def test_panels_present_and_typed(self):
+        # compute_indicator_panels must surface the flag + exhaustion fields,
+        # delegating to the shared rrg leaves (single source of truth).
+        c, v, o, h, l, spy = _panels(70)
+        panels = metrics.compute_indicator_panels(c, v, o, h, l, spy)
+        self.assertIn("flag", panels)
+        self.assertIn("exhaustion", panels)
+        # a flat symbol never forms a flag → "none" (or NaN in warmup), never bull/bear
+        last = panels["flag"]["FLAT"].iloc[-1]
+        self.assertTrue(last == "none" or (isinstance(last, float) and np.isnan(last)))
+
+
 class TestSessionMath(unittest.TestCase):
     def test_session_fraction(self):
         f = metrics.session_fraction

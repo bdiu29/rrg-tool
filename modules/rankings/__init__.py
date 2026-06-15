@@ -175,9 +175,55 @@ def _rank_movers(sectors, past_key, n=5):
     return ups, downs
 
 
+def _pct(rate):
+    """0–1 win rate → a rounded 0–100 percent, or None."""
+    return None if rate is None else round(float(rate) * 100, 1)
+
+
+def flag_stats_for(symbols):
+    """{symbol: {bull_winrate, bull_n, bear_winrate, bear_n, exhaustion}} — each
+    name's own historical flag reliability (from the screener's background-
+    precomputed, ~90-day-cached table) plus its current volume-exhaustion state.
+    Shared by rankings + themes. Fail-soft → {} if the screener isn't available;
+    kicks the (incremental) precompute in the background if it hasn't run today."""
+    symbols = [s for s in symbols if s]
+    if not symbols:
+        return {}
+    try:
+        from modules.screener import store as screener_store, snapshot as screener_snapshot
+    except Exception:
+        return {}
+    try:
+        if screener_snapshot.needs_flagstats_refresh():
+            screener_snapshot.start_refresh("flagstats")   # background, non-blocking
+    except Exception:
+        pass
+    wr  = {}
+    sig = {}
+    try:
+        wr = screener_store.get_flag_winrates(symbols)
+    except Exception:
+        wr = {}
+    try:
+        sig = screener_store.fetch_signal_states(symbols)
+    except Exception:
+        sig = {}
+    out = {}
+    for s in symbols:
+        w  = wr.get(s, {})
+        ex = (sig.get(s) or {}).get("exhaustion")
+        out[s] = {
+            "bull_winrate": _pct(w.get("bull_rate")), "bull_n": w.get("bull_n") or 0,
+            "bear_winrate": _pct(w.get("bear_rate")), "bear_n": w.get("bear_n") or 0,
+            "exhaustion":   ex if ex in ("buyer", "seller") else None,
+        }
+    return out
+
+
 def _sector_leaders(n=15):
-    """Top-n RS-ranked stocks per SPDR sector, read from the screener store.
-    Fail-soft: any sector with no synced fundamentals/snapshot returns []."""
+    """Top-n RS-ranked stocks per SPDR sector, read from the screener store, each
+    enriched with its flag win-rate + current volume exhaustion. Fail-soft: any
+    sector with no synced fundamentals/snapshot returns []."""
     try:
         from modules.screener import store as screener_store
     except Exception:
@@ -188,6 +234,11 @@ def _sector_leaders(n=15):
             out[t] = screener_store.fetch_sector_leaders(t, n)
         except Exception:
             out[t] = []
+    all_syms = [r["symbol"] for rows in out.values() for r in rows]
+    stats = flag_stats_for(all_syms)
+    for rows in out.values():
+        for r in rows:
+            r.update(stats.get(r["symbol"], {}))
     return out
 
 

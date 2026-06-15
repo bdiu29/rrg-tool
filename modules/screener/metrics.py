@@ -10,6 +10,13 @@ live intraday) price is detectable against yesterday's level.
 import numpy as np
 import pandas as pd
 
+# Flag + volume-exhaustion detection are owned by the rrg leaves (single source of
+# truth, shared with the conviction engine and the flag study); we reuse the
+# vectorized panel forms here rather than re-implementing them. No new I/O — the
+# screener already loads rrg via its package init.
+from modules.rrg import flags as rrg_flags
+from modules.rrg import exhaustion as rrg_exhaustion
+
 # ≈320 trading bars: 252 for 52-week levels + warmup buffer for SMA200/RSI.
 SNAPSHOT_LOOKBACK_DAYS = 470
 
@@ -171,6 +178,9 @@ def compute_indicator_panels(close, volume, open_, high, low, spy_close):
     panels.update({f"sma{n}": smas[n] for n in SMA_SPANS})
     panels.update({f"ema{n}": emas[n] for n in EMA_SPANS})
     panels.update(golden_pocket(high, low, close))
+    # bull/bear flag state + volume buyer/seller exhaustion (rrg leaves)
+    panels["flag"] = rrg_flags.flag_panels(close, volume)
+    panels["exhaustion"] = rrg_exhaustion.exhaustion_panels(high, low, close, volume)
     return panels
 
 

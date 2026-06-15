@@ -34,7 +34,19 @@ CREATE TABLE IF NOT EXISTS snapshot (
     high_20d REAL, low_20d REAL, high_252 REAL, low_252 REAL,
     pct_from_52w_high REAL, pct_from_52w_low REAL,
     gp_direction TEXT, gp_retrace REAL, gp_in_pocket REAL, gp_approaching REAL,
-    gp_zone_low REAL, gp_zone_high REAL
+    gp_zone_low REAL, gp_zone_high REAL,
+    flag TEXT, exhaustion TEXT       -- bull/bear flag state; buyer/seller volume exhaustion
+);
+
+-- Per-symbol historical flag win-rate (continuation success), regime-conditioned,
+-- precomputed in the background and cached ~90 days per symbol (the stats barely
+-- move). Read by rankings/themes to show each name's own flag reliability.
+CREATE TABLE IF NOT EXISTS flag_winrate (
+    symbol     TEXT PRIMARY KEY,
+    bull_rate  REAL, bull_n INTEGER,
+    bear_rate  REAL, bear_n INTEGER,
+    regime_conditioned INTEGER,
+    updated_at TEXT
 );
 
 -- Schwab instruments fills the numeric columns; yfinance fills the gaps plus
@@ -160,6 +172,44 @@ BUILTIN_SCREENS = [
             {"field": "volume",         "op": ">",  "value": 100000},
         ],
     },
+    {
+        # Impulsive flagpole + brief shallow consolidation on tapering volume →
+        # continuation in the pole's direction (the PRICE+VOLUME flag).
+        "name": "Bull Flag",
+        "universe": "all",
+        "conditions": [
+            {"field": "flag",   "op": "==", "value": "bull"},
+            {"field": "volume", "op": ">",  "value": 100000},
+        ],
+    },
+    {
+        "name": "Bear Flag",
+        "universe": "all",
+        "conditions": [
+            {"field": "flag",   "op": "==", "value": "bear"},
+            {"field": "volume", "op": ">",  "value": 100000},
+        ],
+    },
+    {
+        # Selling climax — capitulation into a new low on a volume spike that
+        # closes strong (a bottoming tell).
+        "name": "Selling Climax",
+        "universe": "all",
+        "conditions": [
+            {"field": "exhaustion", "op": "==", "value": "seller"},
+            {"field": "volume",     "op": ">",  "value": 100000},
+        ],
+    },
+    {
+        # Buying climax / blow-off — new high on a volume spike that closes weak
+        # (a topping tell).
+        "name": "Buying Climax",
+        "universe": "all",
+        "conditions": [
+            {"field": "exhaustion", "op": "==", "value": "buyer"},
+            {"field": "volume",     "op": ">",  "value": 100000},
+        ],
+    },
 ]
 
 
@@ -241,6 +291,7 @@ SNAPSHOT_COLS = [
     "pct_from_52w_high", "pct_from_52w_low",
     "gp_direction", "gp_retrace", "gp_in_pocket", "gp_approaching",
     "gp_zone_low", "gp_zone_high",
+    "flag", "exhaustion",
 ]
 
 
@@ -289,6 +340,26 @@ def fetch_quotes(symbols):
     return {r[0]: {"close": r[1], "chg_pct": r[2], "rs_1m_pct": r[3]} for r in rows}
 
 
+def fetch_signal_states(symbols):
+    """{symbol: {"flag", "exhaustion"}} — current flag / volume-exhaustion state
+    from the snapshot, for a small symbol list (rankings/themes display)."""
+    symbols = list(symbols)
+    if not symbols:
+        return {}
+    out = {}
+    with connect() as conn:
+        for i in range(0, len(symbols), 500):
+            chunk = symbols[i:i + 500]
+            ph    = ",".join("?" * len(chunk))
+            rows  = conn.execute(
+                f"SELECT symbol, flag, exhaustion FROM snapshot WHERE symbol IN ({ph})",
+                chunk,
+            ).fetchall()
+            for r in rows:
+                out[r[0]] = {"flag": r[1], "exhaustion": r[2]}
+    return out
+
+
 def fetch_sector_leaders(sector_etf, n=15):
     """Top-n stocks tagged to a SPDR sector, ranked by 1-month relative strength
     vs SPY. Reads the screener's sector tags (fundamentals) joined to the RS
@@ -306,6 +377,65 @@ def fetch_sector_leaders(sector_etf, n=15):
         {"symbol": r[0], "close": r[1], "chg_pct": r[2], "rs_1m_pct": r[3]}
         for r in rows
     ]
+
+
+# ---------------------------------------------------------------------------
+# flag win-rate (per-symbol historical flag reliability, ~90-day cached)
+# ---------------------------------------------------------------------------
+
+def upsert_flag_winrate(symbol, bull_rate, bull_n, bear_rate, bear_n,
+                        regime_conditioned):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO flag_winrate "
+            "(symbol, bull_rate, bull_n, bear_rate, bear_n, regime_conditioned, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(symbol) DO UPDATE SET "
+            "bull_rate=excluded.bull_rate, bull_n=excluded.bull_n, "
+            "bear_rate=excluded.bear_rate, bear_n=excluded.bear_n, "
+            "regime_conditioned=excluded.regime_conditioned, updated_at=excluded.updated_at",
+            (symbol, bull_rate, bull_n, bear_rate, bear_n,
+             int(bool(regime_conditioned)), _now()),
+        )
+
+
+def get_flag_winrates(symbols):
+    """{symbol: {"bull_rate", "bull_n", "bear_rate", "bear_n"}} for the subset
+    that has a row. Missing symbols are simply absent."""
+    symbols = list(symbols)
+    if not symbols:
+        return {}
+    out = {}
+    with connect() as conn:
+        for i in range(0, len(symbols), 500):
+            chunk = symbols[i:i + 500]
+            ph    = ",".join("?" * len(chunk))
+            rows  = conn.execute(
+                f"SELECT symbol, bull_rate, bull_n, bear_rate, bear_n "
+                f"FROM flag_winrate WHERE symbol IN ({ph})", chunk,
+            ).fetchall()
+            for r in rows:
+                out[r[0]] = {"bull_rate": r[1], "bull_n": r[2],
+                             "bear_rate": r[3], "bear_n": r[4]}
+    return out
+
+
+def stale_winrate_symbols(symbols, max_age_days=90):
+    """Subset of `symbols` whose flag win-rate row is missing or older than
+    `max_age_days` — the only ones the background job needs to recompute
+    (mirrors `stale_fundamental_symbols`)."""
+    cutoff = (datetime.now() - timedelta(days=max_age_days)).strftime("%Y-%m-%d %H:%M:%S")
+    fresh  = set()
+    with connect() as conn:
+        for i in range(0, len(symbols), 500):
+            chunk = symbols[i:i + 500]
+            ph    = ",".join("?" * len(chunk))
+            rows  = conn.execute(
+                f"SELECT symbol FROM flag_winrate WHERE symbol IN ({ph}) "
+                f"AND updated_at >= ?", (*chunk, cutoff),
+            ).fetchall()
+            fresh.update(r[0] for r in rows)
+    return [s for s in symbols if s not in fresh]
 
 
 # ---------------------------------------------------------------------------

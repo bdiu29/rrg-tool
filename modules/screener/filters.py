@@ -42,6 +42,8 @@ FIELDS = {
     "gp_in_pocket":       {"label": "In golden pocket (1/0)",      "kind": "num"},
     "gp_approaching":     {"label": "Approaching golden pocket (1/0)", "kind": "num"},
     "gp_direction":       {"label": "Golden-pocket direction", "kind": "str"},
+    "flag":               {"label": "Flag pattern (bull/bear/none)", "kind": "str"},
+    "exhaustion":         {"label": "Volume exhaustion (buyer/seller/none)", "kind": "str"},
     "market_cap":         {"label": "Market cap",        "kind": "num"},
     "pe_ratio":           {"label": "P/E ratio",         "kind": "num"},
     "div_yield":          {"label": "Dividend yield %",  "kind": "num"},

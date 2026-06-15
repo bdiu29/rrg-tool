@@ -28,6 +28,8 @@ def _frame():
         "gp_direction": ["bullish", "bearish", "bullish", None],
         "sector_etf":  ["XLK", "XLE", None, "XLK"],
         "earnings_date": [None, "2026-06-15", "2026-07-30", None],
+        "flag":        ["bull", "bear", "none", None],
+        "exhaustion":  ["none", "seller", "buyer", None],
     }, index=["UP", "DOWN", "BIG", "GAPPY"])
 
 
@@ -64,6 +66,16 @@ class TestOps(unittest.TestCase):
             {"field": "volume",  "op": ">", "value": 100_000},
         ])
         self.assertEqual(set(got.index), {"UP"})
+
+    def test_flag_and_exhaustion_fields(self):
+        self.assertEqual(self._run("flag", "==", "bull"), {"UP"})
+        self.assertEqual(self._run("flag", "==", "bear"), {"DOWN"})
+        self.assertEqual(self._run("exhaustion", "==", "seller"), {"DOWN"})
+        self.assertEqual(self._run("exhaustion", "==", "buyer"), {"BIG"})
+        # GAPPY has None flag/exhaustion → never matches
+        self.assertNotIn("GAPPY", self._run("flag", "!=", "bull"))
+        self.assertEqual(filters.validate_conditions(
+            [{"field": "flag", "op": "==", "value": "bull"}]), [])
 
     def test_unknown_field_matches_nothing(self):
         self.assertEqual(self._run("bogus", ">", 0), set())

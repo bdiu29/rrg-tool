@@ -177,14 +177,28 @@ class TestStoreAlertsAndRouting(unittest.TestCase):
         store.seed_builtin_screens()
         names = [s["name"] for s in store.list_screens()]
         self.assertEqual(sorted(names),
-                         ["Approaching Golden Pocket", "Breakout",
-                          "Continuation", "Golden Pocket", "Volume Building"])
+                         ["Approaching Golden Pocket", "Bear Flag", "Breakout",
+                          "Bull Flag", "Buying Climax", "Continuation",
+                          "Golden Pocket", "Selling Climax", "Volume Building"])
 
     def test_screen_match_memory(self):
         store.update_screen_matches(1, {"AAA", "BBB"}, "2026-06-11")
         self.assertEqual(store.get_screen_matches(1), {"AAA", "BBB"})
         store.update_screen_matches(1, {"BBB"}, "2026-06-12")
         self.assertEqual(store.get_screen_matches(1), {"BBB"})
+
+    def test_flag_winrate_roundtrip_and_staleness(self):
+        store.upsert_flag_winrate("AAA", 0.58, 12, 0.40, 6, True)
+        got = store.get_flag_winrates(["AAA", "ZZZ"])
+        self.assertEqual(got["AAA"]["bull_rate"], 0.58)
+        self.assertEqual(got["AAA"]["bull_n"], 12)
+        self.assertNotIn("ZZZ", got)                       # missing symbols absent
+        # a just-written row is fresh; a never-written one is stale
+        stale = store.stale_winrate_symbols(["AAA", "ZZZ"], max_age_days=90)
+        self.assertEqual(stale, ["ZZZ"])
+        # upsert overwrites
+        store.upsert_flag_winrate("AAA", 0.61, 20, None, 0, True)
+        self.assertEqual(store.get_flag_winrates(["AAA"])["AAA"]["bull_rate"], 0.61)
 
 
 if __name__ == "__main__":

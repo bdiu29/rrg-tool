@@ -29,7 +29,7 @@ import pandas as pd
 
 from modules import Response
 from modules.rrg import signal, compute_rrg
-from modules.rankings import compute_rankings, _ret, _rel
+from modules.rankings import compute_rankings, _ret, _rel, flag_stats_for
 from . import store as themes_store
 
 _MODULE_DIR = Path(__file__).resolve().parent
@@ -88,6 +88,12 @@ def _constituent_leaders(themes, close, benchmark):
             })
         rows.sort(key=lambda r: (r["rs_1m"] is not None, r["rs_1m"] or 0), reverse=True)
         out[str(t["id"])] = rows
+    # enrich every constituent with its flag win-rate + current volume exhaustion
+    # (off-universe tickers simply get blanks — fail-soft)
+    stats = flag_stats_for([r["symbol"] for rows in out.values() for r in rows])
+    for rows in out.values():
+        for r in rows:
+            r.update(stats.get(r["symbol"], {}))
     return out
 
 

@@ -8,10 +8,16 @@ shallow consolidation on **tapering volume** (the flag) — on each SPDR sector 
 + SPY, then measures whether the continuation actually happens. It answers "how
 often does a flag work, and by how much?" across the basket.
 
+The detection core (`_detect`/`_summary`/constants) now lives in the pure
+`flags.py` leaf so `signal.py` (conviction weighting) and the screener can reuse
+it without a circular import; this module re-exports them and adds the yfinance
+download, the CLI, and the **regime-conditioned** study (`--regime`) that measures
+the honest bear-flag edge during DETERIORATING regimes only.
+
 Detection is no-lookahead at each flag (uses only bars up to the flag); the
 forward returns it scores are, of course, in the future — that's the study.
 
-Run:  /usr/bin/python3 -m modules.rrg.flag_backtest [--no-taper] [--period 5y]
+Run:  /usr/bin/python3 -m modules.rrg.flag_backtest [--no-taper] [--period 5y] [--regime]
 """
 
 import argparse
@@ -21,92 +27,32 @@ import numpy as np
 import yfinance as yf
 
 from .signal import DEFAULT_TICKERS, BENCHMARK
-
-# --- pattern parameters (daily bars) ---
-POLE_BARS     = 10     # window for the flagpole
-FLAG_BARS     = 5      # window for the flag consolidation
-POLE_MIN_RET  = 0.06   # flagpole must move ≥ this (fraction) over POLE_BARS
-FLAG_MAX_RETR = 0.45   # flag may pull back at most this fraction of the pole
-FLAG_MAX_RANGE= 0.5    # flag close-range ≤ this fraction of the pole (tightness)
-FWD_HORIZONS  = (5, 10, 20)
-SUCCESS_H     = 10     # horizon the headline success rate is measured at
-COOLDOWN      = FLAG_BARS   # bars to wait before logging another flag on a symbol
+from .flags import _detect, _summary, _regime_ok, SUCCESS_H   # the shared detection core
 
 
-def _detect(close, vol, require_taper):
-    """Yield flag events for one symbol: (kind, index, {h: fwd_return})."""
-    n = len(close)
-    events = []
-    last = -COOLDOWN - 1
-    need = POLE_BARS + FLAG_BARS
-    for e in range(need, n):
-        if e - last < COOLDOWN:
-            continue
-        fs = e - FLAG_BARS + 1                       # flag start
-        ps = fs - POLE_BARS                          # pole start
-        pole_a, pole_b = close[ps], close[fs]        # pole endpoints
-        if not (np.isfinite(pole_a) and pole_a > 0 and np.isfinite(pole_b)):
-            continue
-        pole_ret = (pole_b - pole_a) / pole_a
-        pole_abs = abs(pole_b - pole_a)
-        if pole_abs <= 0:
-            continue
-        flag = close[fs:e + 1]
-        if not np.all(np.isfinite(flag)):
-            continue
-        flag_range = (np.max(flag) - np.min(flag)) / pole_abs
-        # volume taper: mean volume in the flag below the pole's
-        taper = True
-        if require_taper:
-            pv, fv = np.nanmean(vol[ps:fs + 1]), np.nanmean(vol[fs:e + 1])
-            taper = np.isfinite(pv) and np.isfinite(fv) and pv > 0 and fv < pv
-
-        kind = None
-        if pole_ret >= POLE_MIN_RET:                 # bull flag
-            retr = (pole_b - close[e]) / pole_abs     # pullback off the pole top
-            if 0.0 <= retr <= FLAG_MAX_RETR and flag_range <= FLAG_MAX_RANGE and close[e] <= pole_b and taper:
-                kind = "bull"
-        elif pole_ret <= -POLE_MIN_RET:              # bear flag
-            retr = (close[e] - pole_b) / pole_abs
-            if 0.0 <= retr <= FLAG_MAX_RETR and flag_range <= FLAG_MAX_RANGE and close[e] >= pole_b and taper:
-                kind = "bear"
-        if kind is None:
-            continue
-
-        fwd = {}
-        for h in FWD_HORIZONS:
-            if e + h < n and np.isfinite(close[e + h]) and close[e] > 0:
-                fwd[h] = (close[e + h] / close[e] - 1) * 100
-        events.append((kind, e, fwd))
-        last = e
-    return events
+def _regime_labels_for(dates):
+    """Best-effort per-date regime labels (HEALTHY/NEUTRAL/DETERIORATING) aligned
+    to `dates`, from the breadth module. Lazy + fail-soft: returns None if breadth
+    has no local data (then the study runs unconditioned)."""
+    try:
+        from modules.breadth import _full_series
+        from modules.breadth import regime as breadth_regime
+        agg, der, _index = _full_series("sp500")
+        if agg is None:
+            return None
+        labels = breadth_regime.regime_series(der["summation"], agg["pct_above_200"])
+        return breadth_regime.align_labels(labels, dates)   # handles str/Timestamp mismatch
+    except Exception:
+        return None
 
 
-def _summary(events, kind):
-    """Stats for one kind ('bull'/'bear'). Success = move continued in the pole's
-    direction (bull → up, bear → down) at SUCCESS_H."""
-    rows = [ev for ev in events if ev[0] == kind]
-    out = {"n": len(rows), "horizons": {}}
-    for h in FWD_HORIZONS:
-        r = np.array([ev[2][h] for ev in rows if h in ev[2]], dtype=float)
-        if not r.size:
-            continue
-        cont = (r > 0) if kind == "bull" else (r < 0)     # continuation in pole direction
-        out["horizons"][h] = {
-            "n": int(r.size),
-            "success_rate": round(100.0 * cont.mean(), 1),
-            "avg_move": round(float(r.mean()), 2),
-            "median_move": round(float(np.median(r)), 2),
-        }
-    return out
-
-
-def run(period="5y", require_taper=True):
+def run(period="5y", require_taper=True, conditioned=False):
     symbols = DEFAULT_TICKERS + [BENCHMARK]
     raw = yf.download(symbols, period=period, interval="1d",
                       auto_adjust=True, progress=False, group_by="column")
     close_df = raw["Close"]
     vol_df   = raw["Volume"]
+    reg = _regime_labels_for(close_df.index) if conditioned else None
     per_symbol, agg = {}, defaultdict(list)
     for t in symbols:
         if t not in close_df.columns:
@@ -114,18 +60,23 @@ def run(period="5y", require_taper=True):
         c = close_df[t].to_numpy(dtype=float)
         v = vol_df[t].to_numpy(dtype=float) if t in vol_df.columns else np.full(len(c), np.nan)
         ev = _detect(c, v, require_taper)
+        if reg is not None:                            # keep only regime-aligned events
+            lab = reg.to_numpy()
+            ev = [e for e in ev if _regime_ok(e[0], lab[e[1]])]
         per_symbol[t] = {"bull": _summary(ev, "bull"), "bear": _summary(ev, "bear")}
         agg["all"].extend(ev)
     overall = {"bull": _summary(agg["all"], "bull"), "bear": _summary(agg["all"], "bear")}
     return {"period": period, "taper": require_taper, "success_horizon": SUCCESS_H,
-            "per_symbol": per_symbol, "overall": overall}
+            "conditioned": bool(reg is not None), "per_symbol": per_symbol, "overall": overall}
 
 
 def _print(report):
     th = SUCCESS_H
     taper = "with volume taper" if report["taper"] else "no taper filter"
+    cond = (" · REGIME-CONDITIONED (bull outside / bear inside DETERIORATING)"
+            if report.get("conditioned") else "")
     print(f"\nFlag success-rate study — {report['period']} daily, {taper}, "
-          f"continuation measured at +{th} bars\n")
+          f"continuation measured at +{th} bars{cond}\n")
     print(f"{'Symbol':<7}{'Bull n':>7}{'Bull win%':>10}{'Bull avg%':>10}"
           f"{'Bear n':>8}{'Bear win%':>10}{'Bear avg%':>10}")
     for t, d in report["per_symbol"].items():
@@ -145,8 +96,16 @@ def main():
     ap = argparse.ArgumentParser(description="Bull/bear flag success-rate study")
     ap.add_argument("--period", default="5y")
     ap.add_argument("--no-taper", action="store_true", help="drop the volume-taper filter")
+    ap.add_argument("--regime", action="store_true",
+                    help="condition on the breadth regime (bull outside / bear inside "
+                         "DETERIORATING) — the honest bear-flag edge")
     args = ap.parse_args()
-    _print(run(period=args.period, require_taper=not args.no_taper))
+    report = run(period=args.period, require_taper=not args.no_taper,
+                 conditioned=args.regime)
+    _print(report)
+    if args.regime and not report["conditioned"]:
+        print("NOTE: no breadth data found — ran UNCONDITIONED. Sync breadth (sp500) "
+              "first for the regime-conditioned edge.\n")
 
 
 if __name__ == "__main__":

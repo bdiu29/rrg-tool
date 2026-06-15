@@ -136,6 +136,14 @@
   .tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
   .leaders-note { font-size: 11px; color: var(--dim); padding: 18px 4px; }
 
+  /* ---- flag win-rate + volume exhaustion ---- */
+  .wr { font-size: 11px; font-weight: 600; color: var(--green); white-space: nowrap; }
+  .wr.down { color: var(--red); }
+  .exh { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 8px;
+         margin-left: 5px; white-space: nowrap; }
+  .exh.buy  { background: rgba(26,157,107,0.14); color: var(--green); }  /* seller exhaustion → bottoming */
+  .exh.sell { background: rgba(209,69,59,0.14);  color: var(--red);   }  /* buyer exhaustion → topping */
+
   .seg { margin-left: auto; display: inline-flex; border: 1px solid var(--grid);
          border-radius: 8px; overflow: hidden; }
   .seg button {
@@ -239,6 +247,20 @@ function sign(v, suffix){
 }
 function fmtPrice(p){ return p == null ? '—' : '$' + p.toFixed(2); }
 
+const FLAG_MIN_N = 8;   // mirror signal.FLAG_MIN_N — below this, the rate is noise
+// Each name's own historical flag reliability + current volume-exhaustion tell.
+function winCell(s){
+  const parts = [];
+  if (s.bull_winrate != null && (s.bull_n || 0) >= FLAG_MIN_N)
+    parts.push(`<span class="wr" title="${s.bull_n} bull flags">▲${Math.round(s.bull_winrate)}%</span>`);
+  if (s.bear_winrate != null && (s.bear_n || 0) >= FLAG_MIN_N)
+    parts.push(`<span class="wr down" title="${s.bear_n} bear flags">▼${Math.round(s.bear_winrate)}%</span>`);
+  let cell = parts.length ? parts.join(' ') : '<span class="muted">—</span>';
+  if (s.exhaustion === 'seller') cell += '<span class="exh buy" title="selling climax — bottoming tell">climax↑</span>';
+  else if (s.exhaustion === 'buyer') cell += '<span class="exh sell" title="buying climax — topping tell">climax↓</span>';
+  return cell;
+}
+
 function renderTable(){
   const rows = DATA.sectors.slice().sort((a, b) => {
     let x = a[sortKey], y = b[sortKey];
@@ -305,7 +327,7 @@ async function renderLeaders(){
 
   if (leaderMode === 'rs') {
     head.innerHTML = `<tr><th class="l">#</th><th class="l">Symbol</th>
-      <th>Price</th><th>Chg%</th><th>RS 1M%</th></tr>`;
+      <th>Price</th><th>Chg%</th><th>RS 1M%</th><th class="l">Flag win%</th></tr>`;
     const list = (DATA.leaders || {})[activeSector] || [];
     if (!list.length) {
       setNote(`No synced stocks tagged to ${activeSector} yet — run a screener sync (snapshot + fundamentals) to populate sector leaders.`);
@@ -314,7 +336,7 @@ async function renderLeaders(){
     body.innerHTML = list.map((s, i) => `
       <tr><td class="l muted">${i + 1}</td><td class="l tk">${s.symbol}</td>
         <td>${fmtPrice(s.close)}</td><td>${sign(s.chg_pct, '%')}</td>
-        <td>${sign(s.rs_1m_pct, '%')}</td></tr>`).join('');
+        <td>${sign(s.rs_1m_pct, '%')}</td><td class="l">${winCell(s)}</td></tr>`).join('');
     return;
   }
 

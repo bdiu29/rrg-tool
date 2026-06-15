@@ -521,6 +521,14 @@
     <div class="bt-head">
       <h2>Strategy Backtest</h2>
       <div class="bt-controls">
+        <select id="bt-universe" title="Ticker universe">
+          <option value="sectors">11 SPDR sectors</option>
+          <option value="etfs">Sector + industry ETFs (~40)</option>
+        </select>
+        <select id="bt-benchmark" title="Benchmark (yardstick for excess + equity)">
+          <option value="SPY">vs SPY (cap-weight)</option>
+          <option value="RSP">vs RSP (equal-weight)</option>
+        </select>
         <select id="bt-exit" title="Exit model">
           <option value="signal">Exit on opposing call</option>
           <option value="hold">Hold 10 bars</option>
@@ -1136,7 +1144,8 @@ async function runBacktest(walkForward) {
     : 'Replaying the rotation calls over history…';
   try {
     const body = { timeframe: currentTF, tail: currentTail,
-                   exit: { model: $('bt-exit').value }, walk_forward: !!walkForward };
+                   exit: { model: $('bt-exit').value }, universe: $('bt-universe').value,
+                   benchmark: $('bt-benchmark').value, walk_forward: !!walkForward };
     const r = await fetch('/api/rrg/backtest', { method: 'POST', body: JSON.stringify(body) });
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || 'backtest failed');
@@ -1169,13 +1178,19 @@ function renderBacktest(d) {
   const rep = $('bt-report');
   rep.style.display = 'block';
   const s = d.stats || {}, eq = d.equity || {}, es = d.event_study || {};
+  const cfg = d.config || {};
 
-  let html = '<div class="bt-summary">';
+  const bench = (cfg.benchmark || 'SPY');
+  let html = '';
+  if (cfg.universe_label) {
+    html += `<div class="bt-note" style="margin-bottom:12px">Universe: <b>${cfg.universe_label}</b> · ${cfg.n_tickers} tickers · vs <b>${cfg.benchmark_label || bench}</b> · ${cfg.start || '?'} → ${cfg.end || '?'}</div>`;
+  }
+  html += '<div class="bt-summary">';
   html += btStat(s.n_trades ?? 0, 'Trades');
   html += btStat(s.win_rate != null ? Math.round(s.win_rate) + '%' : '—', 'Win rate');
   html += btStat(fmtPct(eq.total_return), 'Strategy', 'bt-v ' + signCls(eq.total_return));
-  html += btStat(fmtPct(eq.bench_matched_return), 'SPY (matched)', 'bt-v ' + signCls(eq.bench_matched_return));
-  html += btStat(fmtPct(eq.bench_total_return), 'SPY (always in)', 'bt-v ' + signCls(eq.bench_total_return));
+  html += btStat(fmtPct(eq.bench_matched_return), bench + ' (matched)', 'bt-v ' + signCls(eq.bench_matched_return));
+  html += btStat(fmtPct(eq.bench_total_return), bench + ' (always in)', 'bt-v ' + signCls(eq.bench_total_return));
   html += btStat(eq.time_in_market != null ? Math.round(eq.time_in_market) + '%' : '—', 'Time in mkt');
   html += btStat(fmtPct(eq.max_drawdown), 'Max DD', 'bt-v neg');
   html += btStat(eq.sharpe != null ? (+eq.sharpe).toFixed(2) : '—', 'Sharpe');
@@ -1198,12 +1213,32 @@ function renderBacktest(d) {
     html += `<td>${w10 && w10.win_rate != null ? Math.round(w10.win_rate) + '%' : '—'}</td></tr>`;
   });
   html += '</tbody></table>';
-  html += '<div class="bt-note">Excess = the sector\'s return minus SPY over the same window, averaged across signal onsets. A working tool shows ROTATE IN positive and ROTATE OUT negative.</div>';
+  html += `<div class="bt-note">Excess = the sector's return minus ${bench} over the same window, averaged across signal onsets. A working tool shows ROTATE IN positive and ROTATE OUT negative.</div>`;
+
+  // Rotation-regime split — does the signal only work when rotation is live?
+  if (d.regime_study && d.regime_study.rows) {
+    html += `<div class="bt-section-title">By rotation regime — excess vs ${bench} (RSP/SPY trend: is rotation live?)</div>`;
+    html += '<table class="bt-table"><thead><tr><th>Call</th><th>Regime</th><th>Onsets</th>';
+    HZ.forEach(h => html += `<th>+${h}d</th>`);
+    html += '</tr></thead><tbody>';
+    d.regime_study.rows.forEach(r => {
+      const cls = r.call === 'ROTATE IN' ? 'call-in' : 'call-out';
+      const on = r.regime === 'on';
+      html += `<tr><td class="${cls}">${r.call}</td><td>${on ? '🟢 on' : '🔴 off'}</td><td>${r.n_onsets}</td>`;
+      HZ.forEach(h => {
+        const ex = r.horizons[h] ? r.horizons[h].excess : null;
+        html += `<td class="${signCls(ex)}">${ex == null ? '—' : fmtPct(ex)}</td>`;
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '<div class="bt-note">Rotation <b>on</b> = equal-weight (RSP) leading cap-weight (SPY), i.e. breadth broadening; <b>off</b> = a concentration regime a rotation signal structurally can\'t beat. If ROTATE IN excess is positive only when rotation is on, the signal works — it was just tested across both regimes.</div>';
+  }
 
   // Confidence buckets — the probabilistic model's own test.
   if (d.confidence && d.confidence.rows) {
     const cf = d.confidence;
-    html += `<div class="bt-section-title">ROTATE IN by conviction bucket — excess vs SPY at +${cf.horizon}d</div>`;
+    html += `<div class="bt-section-title">ROTATE IN by conviction bucket — excess vs ${bench} at +${cf.horizon}d</div>`;
     html += '<table class="bt-table"><thead><tr><th>Conviction</th><th>Onsets</th><th>Excess</th><th>Win</th></tr></thead><tbody>';
     cf.rows.forEach(r => {
       html += `<tr><td>${r.bucket}</td><td>${r.n}</td>`
@@ -1260,15 +1295,24 @@ function renderBacktest(d) {
 function backtestMarkdown(d) {
   if (!d) return '';
   const c = d.config || {}, s = d.stats || {}, eq = d.equity || {}, es = d.event_study || {};
+  const bench = c.benchmark || 'SPY';
   let m = `# RRG backtest — ${c.interval} (${c.start} → ${c.end})\n\n`;
+  if (c.universe_label) m += `Universe: ${c.universe_label} · ${c.n_tickers} tickers · vs ${c.benchmark_label || bench}\n\n`;
   m += `Trades ${s.n_trades || 0} · win ${s.win_rate != null ? Math.round(s.win_rate) + '%' : '—'} · `
-     + `strategy ${fmtPct(eq.total_return)} · SPY-matched ${fmtPct(eq.bench_matched_return)} · SPY-always ${fmtPct(eq.bench_total_return)} · time-in-mkt ${eq.time_in_market != null ? Math.round(eq.time_in_market) + '%' : '—'} · maxDD ${fmtPct(eq.max_drawdown)}\n\n`;
-  m += `## Forward excess vs SPY by call\n\n| Call | Onsets | ${HZ.map(h => '+' + h + 'd').join(' | ')} |\n`;
+     + `strategy ${fmtPct(eq.total_return)} · ${bench}-matched ${fmtPct(eq.bench_matched_return)} · ${bench}-always ${fmtPct(eq.bench_total_return)} · time-in-mkt ${eq.time_in_market != null ? Math.round(eq.time_in_market) + '%' : '—'} · maxDD ${fmtPct(eq.max_drawdown)}\n\n`;
+  m += `## Forward excess vs ${bench} by call\n\n| Call | Onsets | ${HZ.map(h => '+' + h + 'd').join(' | ')} |\n`;
   m += `|---|---|${HZ.map(() => '---').join('|')}|\n`;
   CALL_ORDER.forEach(call => {
     const r = es[call]; if (!r) return;
     m += `| ${call} | ${r.n_onsets} | ${HZ.map(h => r.horizons[h] ? fmtPct(r.horizons[h].excess) : '—').join(' | ')} |\n`;
   });
+  if (d.regime_study && d.regime_study.rows) {
+    m += `\n## By rotation regime — excess vs ${bench}\n\n| Call | Regime | Onsets | ${HZ.map(h => '+' + h + 'd').join(' | ')} |\n`;
+    m += `|---|---|---|${HZ.map(() => '---').join('|')}|\n`;
+    d.regime_study.rows.forEach(r => {
+      m += `| ${r.call} | ${r.regime} | ${r.n_onsets} | ${HZ.map(h => r.horizons[h] ? fmtPct(r.horizons[h].excess) : '—').join(' | ')} |\n`;
+    });
+  }
   if (d.walk_forward) {
     const w = d.walk_forward;
     m += `\n## Walk-forward (mean OOS sep +${w.horizon}d: ${fmtPct(w.mean_oos_sep)})\n\n`;

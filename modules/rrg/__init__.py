@@ -54,8 +54,27 @@ def compute_rrg(tickers, benchmark, interval, tail=6, asof=None, close=None):
     `close` lets a caller inject a pre-built close panel (themes module → RRG of
     synthetic theme indices); when None, `compute_series` fetches prices.
     """
+    injected = close is not None     # themes pass a synthetic panel (no real volume)
     series, date, close = signal.compute_series(tickers, benchmark, interval,
                                                 asof=asof, close=close)
+
+    # Live-only conviction refinements: current regime + per-symbol flag edge +
+    # volume exhaustion (real sector ETFs only — synthetic theme indices have no
+    # volume). All fail-soft: the chart must render even if breadth/yfinance hiccup.
+    regime, wr_map, exh_map = None, {}, {}
+    if not injected:
+        try:
+            regime = signal.current_regime()
+        except Exception:
+            regime = None
+        try:
+            wr_map = signal.flag_win_rates_for(list(series))
+        except Exception:
+            wr_map = {}
+        try:
+            exh_map = signal.exhaustion_for(list(series))
+        except Exception:
+            exh_map = {}
 
     bench = close[benchmark]
     bench_prices = bench.dropna()
@@ -68,7 +87,8 @@ def compute_rrg(tickers, benchmark, interval, tail=6, asof=None, close=None):
         win = df.tail(tail)
         if win.empty:
             continue
-        ev = signal.evaluate_tail(win)
+        ev = signal.evaluate_tail(win, flag_wr=wr_map.get(t), regime=regime,
+                                  vol_exh=exh_map.get(t))
 
         prices     = close[t].dropna()
         change_pct = rel_pct = None
@@ -148,13 +168,17 @@ def _handle_backtest(req):
     interval  = "1wk" if timeframe == "weekly" else "1d"
     tail      = max(3, min(int(body.get("tail", 6)), 14))
     exit_cfg  = body.get("exit") or {}
+    universe  = body.get("universe", backtest.DEFAULT_UNIVERSE)
+    benchmark = body.get("benchmark", backtest.DEFAULT_BENCHMARK)
     try:
         if body.get("walk_forward"):
             report = backtest.walk_forward_search(interval=interval, tail=tail,
-                                                  exit_cfg=exit_cfg)
+                                                  exit_cfg=exit_cfg, universe=universe,
+                                                  benchmark=benchmark)
         else:
             report = backtest.run_backtest(interval=interval, tail=tail,
-                                           exit_cfg=exit_cfg)
+                                           exit_cfg=exit_cfg, universe=universe,
+                                           benchmark=benchmark)
         report["timeframe"] = timeframe
         return Response.json(report)
     except Exception as e:

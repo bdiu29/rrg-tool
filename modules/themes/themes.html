@@ -120,6 +120,12 @@
   .nm-cell { display: flex; align-items: center; gap: 7px; }
   .nm-cell .sw { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
   .pos { color: var(--green); } .neg { color: var(--red); } .muted { color: var(--dim); }
+  .wr { font-size: 11px; font-weight: 600; color: var(--green); white-space: nowrap; }
+  .wr.down { color: var(--red); }
+  .exh { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 8px;
+         margin-left: 5px; white-space: nowrap; }
+  .exh.buy  { background: rgba(26,157,107,0.14); color: var(--green); }
+  .exh.sell { background: rgba(209,69,59,0.14);  color: var(--red);   }
   .pill { display: inline-flex; align-items: center; justify-content: center; min-width: 32px;
     height: 24px; padding: 0 8px; border-radius: 12px; font-size: 11px; font-weight: 600;
     border: 1px solid transparent; }
@@ -248,9 +254,9 @@
   <table>
     <thead><tr>
       <th class="l">#</th><th class="l">Symbol</th><th>Price</th>
-      <th>Chg%</th><th>RS 1M%</th><th>RS 3M%</th>
+      <th>Chg%</th><th>RS 1M%</th><th>RS 3M%</th><th class="l">Flag win%</th>
     </tr></thead>
-    <tbody id="cons-body"><tr><td class="empty" colspan="6">loading…</td></tr></tbody>
+    <tbody id="cons-body"><tr><td class="empty" colspan="7">loading…</td></tr></tbody>
   </table>
 </div>
 
@@ -311,6 +317,19 @@ function sign(v, suf){ if (v === null || v === undefined) return '<span class="m
   const cls = v > 0 ? 'pos' : (v < 0 ? 'neg' : 'muted');
   return `<span class="${cls}">${(v>0?'+':'')+v.toFixed(2)+(suf||'')}</span>`; }
 const fmtPrice = p => p == null ? '—' : '$' + p.toFixed(2);
+
+const FLAG_MIN_N = 8;   // mirror signal.FLAG_MIN_N — below this, the win rate is noise
+function winCell(s){
+  const parts = [];
+  if (s.bull_winrate != null && (s.bull_n || 0) >= FLAG_MIN_N)
+    parts.push(`<span class="wr" title="${s.bull_n} bull flags">▲${Math.round(s.bull_winrate)}%</span>`);
+  if (s.bear_winrate != null && (s.bear_n || 0) >= FLAG_MIN_N)
+    parts.push(`<span class="wr down" title="${s.bear_n} bear flags">▼${Math.round(s.bear_winrate)}%</span>`);
+  let cell = parts.length ? parts.join(' ') : '<span class="muted">—</span>';
+  if (s.exhaustion === 'seller') cell += '<span class="exh buy" title="selling climax — bottoming tell">climax↑</span>';
+  else if (s.exhaustion === 'buyer') cell += '<span class="exh sell" title="buying climax — topping tell">climax↓</span>';
+  return cell;
+}
 
 // ---- RRG chart (SVG) ----
 function renderChart(){
@@ -417,7 +436,7 @@ function renderMovers(){ const map={'up-d':'rank_up_daily','up-w':'rank_up_weekl
 // ---- constituents ----
 function renderTabs(){
   const order = (DATA.ranking.sectors||[]).map(s=>({id:String(s.id),name:s.name}));
-  if (!order.length) { $('theme-tabs').innerHTML=''; $('cons-body').innerHTML='<tr><td class="empty" colspan="6">No themes.</td></tr>'; return; }
+  if (!order.length) { $('theme-tabs').innerHTML=''; $('cons-body').innerHTML='<tr><td class="empty" colspan="7">No themes.</td></tr>'; return; }
   if (!order.find(o=>o.id===activeTheme)) activeTheme = order[0].id;
   $('theme-tabs').innerHTML = order.map(o =>
     `<button class="tab ${o.id===activeTheme?'active':''}" data-id="${o.id}">${o.name}</button>`).join('');
@@ -429,8 +448,9 @@ function renderConstituents(){
   $('cons-body').innerHTML = list.length ? list.map((s,i)=>`
     <tr><td class="l muted">${i+1}</td><td class="l" style="font-weight:600">${s.symbol}</td>
       <td>${fmtPrice(s.price)}</td><td>${sign(s.chg_pct,'%')}</td>
-      <td>${sign(s.rs_1m,'%')}</td><td>${sign(s.rs_3m,'%')}</td></tr>`).join('')
-    : '<tr><td class="empty" colspan="6">No price data for this theme’s tickers.</td></tr>';
+      <td>${sign(s.rs_1m,'%')}</td><td>${sign(s.rs_3m,'%')}</td>
+      <td class="l">${winCell(s)}</td></tr>`).join('')
+    : '<tr><td class="empty" colspan="7">No price data for this theme’s tickers.</td></tr>';
 }
 
 // ---- editor ----

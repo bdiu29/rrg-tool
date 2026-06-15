@@ -142,6 +142,49 @@ def regime_state(summation, pct200, active_divergences=0):
     return {"state": state, "score": score, "reasons": reasons}
 
 
+def regime_series(summation, pct200):
+    """Vectorized per-date regime label (HEALTHY / NEUTRAL / DETERIORATING) — the
+    historical counterpart of `regime_state`, for studies that need the regime at
+    every bar (e.g. conditioning the flag win-rate, the conviction regime gate).
+
+    Approximation vs `regime_state`: scores the summation-sign + 5d-slope + %>200d
+    legs only and drops the discrete divergence leg (which only ever subtracts), so
+    it is conservative — it labels DETERIORATING slightly less often than the live
+    point-in-time state. Same thresholds, so it agrees with `regime_state` whenever
+    no divergence flag is active. Returns a Series aligned to `summation.index`."""
+    s = summation.astype(float)
+    p = pct200.reindex(s.index).astype(float)
+
+    s_sign = np.where(s > 0, 1, -1)
+    slope  = s.diff(SUM_SLOPE_DAYS).fillna(0.0)         # early bars: 0 slope → falling leg
+    sl_sign = np.where(slope > 0, 1, -1)
+    p_leg  = np.where(p >= PCT200_BROAD, 1,
+                      np.where(p < PCT200_NARROW, -1, 0))
+    p_leg  = np.where(np.isnan(p), 0, p_leg)            # unknown %>200d contributes nothing
+
+    score = s_sign + sl_sign + p_leg
+    label = np.where(score >= 3, "HEALTHY",
+                     np.where(score <= -2, "DETERIORATING", "NEUTRAL"))
+    return pd.Series(label, index=s.index)
+
+
+def align_labels(labels, target_index):
+    """Reindex a regime-label Series (breadth dates are 'YYYY-MM-DD' strings) onto
+    `target_index`, which may be a DatetimeIndex (the yfinance/RRG path) OR string
+    dates (the breadth bars store) — comparing the two raw would silently align to
+    all-NaN. We normalize both to 'YYYY-MM-DD' for the join, then restore the
+    caller's index and forward-fill gaps. Returns a Series indexed by target_index,
+    or None if `labels` is None."""
+    if labels is None:
+        return None
+    target = pd.Index(target_index)
+    keys = pd.to_datetime(target).strftime("%Y-%m-%d")
+    out = labels.reindex(keys)
+    out.index = target
+    with pd.option_context("future.no_silent_downcasting", True):
+        return out.ffill()
+
+
 # ---------------------------------------------------------------------------
 # Short-term signal interpretation, conditioned on the regime
 # ---------------------------------------------------------------------------

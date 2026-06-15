@@ -21,11 +21,16 @@ import pandas as pd
 from modules.breadth import store as breadth_store
 from modules.breadth import universes as breadth_universes
 from modules.breadth.datasource import resolve_datasource
+from modules.rrg import flags as rrg_flags
 from modules.screener import metrics, poller, quotes, store
 
 YF_THROTTLE  = 0.5    # seconds between per-symbol yfinance calls
 FUND_MAX_AGE = 7      # days before Schwab numbers are considered stale
 MAX_FAILURE_LOG = 50
+
+FLAGSTATS_MAX_AGE = 90     # days a symbol's flag win-rate is cached before recompute
+FLAGSTATS_DAYS    = 1125   # ~3y of bars for a stable per-symbol win-rate
+FLAGSTATS_CHUNK   = 500    # symbols per panel load (keeps the working set small)
 
 _lock = threading.Lock()
 _stop = threading.Event()
@@ -56,8 +61,8 @@ def request_stop():
 
 
 def start_refresh(kind="snapshot"):
-    """kind: snapshot | fundamentals | both. → (ok, message)"""
-    if kind not in ("snapshot", "fundamentals", "both"):
+    """kind: snapshot | fundamentals | both | flagstats. → (ok, message)"""
+    if kind not in ("snapshot", "fundamentals", "both", "flagstats"):
         return False, f"unknown refresh kind '{kind}'"
     with _lock:
         if _state["state"] == "running":
@@ -96,6 +101,14 @@ def needs_refresh():
     latest = bars_date()
     snap   = store.get_meta("snapshot_date")
     return bool(latest) and (snap is None or snap < latest)
+
+
+def needs_flagstats_refresh():
+    """Kick the (incremental) flag win-rate job at most once a calendar day; the
+    job itself recomputes only symbols older than FLAGSTATS_MAX_AGE, so a daily
+    kick on a fresh table is nearly free."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    return store.get_meta("flagstats_date") != today
 
 
 def _universe_symbols():
@@ -153,6 +166,76 @@ def _run_snapshot():
         df, _patched = poller.build_scan_frame(live=False)
         poller.run_alert_pass(df, focus, snap_date)
     _set(done=4, message=f"snapshot done — {n} symbols as of {snap_date}")
+
+
+# ---------------------------------------------------------------------------
+# Flag win-rate precompute (incremental, chunked, ~90-day cached per symbol)
+# ---------------------------------------------------------------------------
+
+def _regime_labels():
+    """Market regime label Series (HEALTHY/NEUTRAL/DETERIORATING) over history,
+    from the breadth module. Used to condition the flag win-rates. Fail-soft."""
+    try:
+        from modules.breadth import _full_series
+        from modules.breadth import regime as breadth_regime
+        agg, der, _index = _full_series("sp500")
+        if agg is None:
+            return None
+        return breadth_regime.regime_series(der["summation"], agg["pct_above_200"])
+    except Exception:
+        return None
+
+
+def _run_flagstats():
+    symbols = _universe_symbols()
+    if not symbols:
+        _set(message="no universe members synced yet — run a breadth sync first")
+        return
+    stale = store.stale_winrate_symbols(symbols, FLAGSTATS_MAX_AGE)
+    if not stale:
+        store.set_meta("flagstats_date", datetime.now().strftime("%Y-%m-%d"))
+        _set(phase="flagstats", total=0, done=0,
+             message="flag win-rates fresh — nothing to recompute")
+        return
+
+    regime = _regime_labels()
+    conditioned = regime is not None
+    start = (datetime.now() - timedelta(days=FLAGSTATS_DAYS)).strftime("%Y-%m-%d")
+    _set(phase="flagstats", total=len(stale), done=0,
+         message=f"flag win-rates: {len(stale)} symbols "
+                 f"({'regime-conditioned' if conditioned else 'unconditioned'})…")
+
+    for i in range(0, len(stale), FLAGSTATS_CHUNK):
+        if _stop.is_set():
+            return
+        chunk = stale[i:i + FLAGSTATS_CHUNK]
+        close, volume = breadth_store.get_panels(chunk, start=start,
+                                                 fields=("close", "volume"))
+        if conditioned and not close.empty:
+            from modules.breadth import regime as breadth_regime
+            reg_arr = breadth_regime.align_labels(regime, close.index).to_numpy()
+        else:
+            reg_arr = None
+        for s in chunk:
+            if _stop.is_set():
+                return
+            try:
+                if close.empty or s not in close.columns:
+                    wr = {"bull": None, "bull_n": 0, "bear": None, "bear_n": 0}
+                else:
+                    c = close[s].to_numpy(dtype=float)
+                    v = (volume[s].to_numpy(dtype=float)
+                         if s in volume.columns else None)
+                    wr = rrg_flags.win_rates(c, v, regime_labels=reg_arr)
+                store.upsert_flag_winrate(s, wr["bull"], wr["bull_n"],
+                                          wr["bear"], wr["bear_n"], conditioned)
+            except Exception as e:
+                _fail(s, e)
+            _tick()
+        del close, volume      # release the chunk's panels before the next load
+
+    store.set_meta("flagstats_date", datetime.now().strftime("%Y-%m-%d"))
+    _set(message=f"flag win-rates done — {len(stale)} symbols recomputed")
 
 
 # ---------------------------------------------------------------------------
@@ -280,6 +363,8 @@ def _run(kind):
             _run_snapshot()
         if kind in ("fundamentals", "both") and not _stop.is_set():
             _run_fundamentals()
+        if kind == "flagstats" and not _stop.is_set():
+            _run_flagstats()
         if _stop.is_set():
             _set(state="done", message="stopped — re-run to resume",
                  finished=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))

@@ -214,5 +214,30 @@ class TestRegimeState(unittest.TestCase):
         self.assertEqual(r["state"], "NEUTRAL")
 
 
+class TestRegimeSeries(unittest.TestCase):
+    def _series(self, summation_vals, pct200_vals):
+        idx = _dates(len(summation_vals))
+        return (pd.Series(summation_vals, index=idx, dtype=float),
+                pd.Series(pct200_vals, index=idx, dtype=float))
+
+    def test_labels_healthy_and_deteriorating(self):
+        # rising positive summation + broad %>200d → HEALTHY at the end;
+        # falling negative summation + narrow %>200d → DETERIORATING.
+        s, p = self._series(np.linspace(100, 500, 40), [70.0] * 40)
+        labels = regime.regime_series(s, p)
+        self.assertEqual(labels.iloc[-1], "HEALTHY")
+        self.assertEqual(len(labels), 40)
+
+        s2, p2 = self._series(np.linspace(200, -400, 40), [40.0] * 40)
+        self.assertEqual(regime.regime_series(s2, p2).iloc[-1], "DETERIORATING")
+
+    def test_agrees_with_regime_state_when_no_divergence(self):
+        # Without an active divergence, the vectorized series' last label must
+        # match the point-in-time regime_state.
+        s, p = self._series(np.linspace(-50, 60, 40), [55.0] * 40)
+        live = regime.regime_state(s, p, active_divergences=0)["state"]
+        self.assertEqual(regime.regime_series(s, p).iloc[-1], live)
+
+
 if __name__ == "__main__":
     unittest.main()

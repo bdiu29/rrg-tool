@@ -28,6 +28,8 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
+from . import flags, exhaustion
+
 # ---------------------------------------------------------------------------
 # Public config (re-exported by __init__ — schwab imports these)
 # ---------------------------------------------------------------------------
@@ -97,7 +99,30 @@ W_GP        = 60.0   # max golden-pocket contribution (× depth-quality × TF we
 W_DIV       = 18.0   # each RSI divergence (RS or price) × TF weight
 W_W4ZONE    = 15.0   # C-bottom sitting in the prior wave-4 confluence zone
 W_CLEAN     = 10.0   # clean (unambiguous) wave count
-W_FLAG      = 25.0   # bull/bear flag continuation pattern (× TF weight)
+W_VOL_EXH   = 14.0   # volume buyer/seller exhaustion (× TF weight) — topping/bottoming tell
+
+# Flag contribution is now EMPIRICAL + REGIME-AWARE (replaced the flat W_FLAG=25):
+# the weight is the flag's measured edge `(win_rate − 0.5)`, scaled by W_FLAG_EDGE,
+# using the symbol's own win rate when we have enough events (`flag_win_*`/`flag_n_*`
+# in `ws`) else the basket default, and zeroed when the flag opposes the regime
+# (bear flag in a HEALTHY market fails upward). win rates: signal.flag_win_rates_for
+# (live, in-memory cached); basket defaults baked from flag_backtest --regime.
+W_FLAG_EDGE   = 150.0
+# Basket defaults (used when a symbol has < FLAG_MIN_N of its own flag events).
+# From `flag_backtest --regime` (5y daily, +10-bar continuation, breadth regime over
+# the available 3y):
+#   bull (outside DETERIORATING): 62.3% (n=69); unconditioned ETF basket 60.6% (n=99);
+#     broad 96-symbol universe 55.5% → 0.58 is a deliberate midpoint prior (conviction
+#     runs on both ETFs and theme baskets).
+#   bear (inside DETERIORATING): 0% on only n=5 — the 3y window had no real bear market,
+#     just brief bull-market pullbacks, so bear flags still failed UPWARD even when
+#     conditioned (unconditioned ETF bear is 27.4%, n=73). There is therefore NO measured
+#     bear-flag edge → 0.50 = "no edge assumed" (edge clamps to 0). The theory that bear
+#     flags work in a genuine downtrend stays untested until a bear market supplies data;
+#     a per-symbol stock with bear_n ≥ FLAG_MIN_N and a real edge still contributes.
+FLAG_BASE_WIN = {"bull": 0.58, "bear": 0.50}
+FLAG_MIN_N    = 8       # fewer than this many events → distrust per-symbol, use basket default
+FLAG_OPPOSING = 0.0     # weight multiplier for a flag opposing the current regime
 
 # Flag pattern: a strong impulse leg (the flagpole) followed by a brief, shallow,
 # tight consolidation against it (the flag) → continuation in the pole's direction.
@@ -824,6 +849,18 @@ def _attach_mtf(out, symbols, benchmark, interval, params):
                 df[divcol] = v.values if v is not None else "none"
 
 
+def _flag_regime_factor(kind, regime):
+    """Weight multiplier for a flag given the current market regime. A flag that
+    OPPOSES the regime is down-weighted toward 0 (bear flags fail upward in a
+    HEALTHY market; bull flags fail in a DETERIORATING one). Aligned or unknown
+    regime → full weight."""
+    if regime == "HEALTHY":
+        return FLAG_OPPOSING if kind == "bear" else 1.0
+    if regime == "DETERIORATING":
+        return FLAG_OPPOSING if kind == "bull" else 1.0
+    return 1.0   # NEUTRAL / None / unknown
+
+
 def _conviction(ws, params=None):
     """Signed confluence score (bullish + / bearish −), clamped to the display
     range, plus a factor breakdown for the tooltip. Each factor CONTRIBUTES weight
@@ -859,10 +896,26 @@ def _conviction(ws, params=None):
         d = ws.get(key)
         if d in ("bull", "bear"):
             add((W_DIV if d == "bull" else -W_DIV) * TF_WEIGHT["1wk"], lab + (" div↑" if d == "bull" else " div↓"))
-    # bull/bear flag continuation pattern (active timeframe)
+    # bull/bear flag continuation pattern (active timeframe) — weighted by the
+    # flag's EMPIRICAL edge (per-symbol win rate where available, else basket
+    # default) and the REGIME (a flag opposing the regime is zeroed). f = ±1.
     f = float(ws.get("flag") or 0.0)
     if abs(f) > 1e-9:
-        add(W_FLAG * f * TF_WEIGHT["1wk"], "bull flag" if f > 0 else "bear flag")
+        kind = "bull" if f > 0 else "bear"
+        win  = ws.get("flag_win_" + kind)
+        if win is None or float(ws.get("flag_n_" + kind, 0) or 0) < FLAG_MIN_N:
+            win = FLAG_BASE_WIN[kind]
+        edge = max(0.0, float(win) - 0.5)              # never flip the sign; toward 0
+        rf   = _flag_regime_factor(kind, ws.get("regime"))
+        add(W_FLAG_EDGE * edge * rf * f * TF_WEIGHT["1wk"], kind + " flag")
+    # volume buyer/seller exhaustion (the symbol's own price+volume): a selling
+    # climax is bullish (bottoming), a buying climax bearish (topping). Confluence
+    # for the wave engine, which can't see volume on the RS line.
+    ex = ws.get("vol_exh")
+    if ex == "seller":
+        add(W_VOL_EXH * TF_WEIGHT["1wk"], "sell exhaustion")
+    elif ex == "buyer":
+        add(-W_VOL_EXH * TF_WEIGHT["1wk"], "buy exhaustion")
     # prior wave-4 confluence on a wave-C bottom
     if wave == "wave-C" and np.isfinite(cur) and np.isfinite(c_hi) and cur <= c_hi \
             and np.isfinite(w4) and abs(w4) > 1e-9 and abs(cur - w4) <= 0.10 * abs(w4):
@@ -959,8 +1012,9 @@ _OHLC_CACHE = {}      # (sorted symbols, period) -> (fetched_at, dict_of_field_f
 
 
 def fetch_ohlc(symbols, period=PERIOD):
-    """Daily OHLC for the backtest (next-bar-open entry + ATR exits). yfinance
-    auto-adjusts all four fields consistently."""
+    """Daily OHLC+V for the backtest (next-bar-open entry + ATR exits) and the
+    flag win-rate / exhaustion reads (volume). yfinance auto-adjusts the price
+    fields consistently."""
     key = (tuple(sorted(symbols)), period)
     hit = _OHLC_CACHE.get(key)
     if hit and time.time() - hit[0] < _PRICE_TTL:
@@ -968,12 +1022,116 @@ def fetch_ohlc(symbols, period=PERIOD):
     raw = yf.download(symbols, period=period, interval="1d",
                       auto_adjust=True, progress=False, group_by="column")
     out = {}
-    for field in ("Open", "High", "Low", "Close"):
+    for field in ("Open", "High", "Low", "Close", "Volume"):
         if isinstance(raw.columns, pd.MultiIndex):
-            out[field.lower()] = raw[field]
-        else:
+            if field in raw.columns.get_level_values(0):
+                out[field.lower()] = raw[field]
+        elif field in raw.columns:
             out[field.lower()] = raw[field].to_frame()
     _OHLC_CACHE[key] = (time.time(), out)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Empirical flag weighting + regime gate (live conviction refinement). These
+# reach UP to the breadth module for the market regime — lazily and fail-soft,
+# since `breadth → schwab → rrg` means rrg must not import breadth at module load.
+# ---------------------------------------------------------------------------
+
+_REGIME_CACHE = {"at": 0.0, "value": None}
+_REGIME_TTL   = 600     # seconds
+_FLAG_WR_CACHE = {}     # symbol -> {"bull", "bull_n", "bear", "bear_n"} (process lifetime)
+FLAG_WR_PERIOD = "5y"   # history for a stable per-symbol flag win-rate (more events)
+
+
+def current_regime():
+    """Current market regime label (HEALTHY / NEUTRAL / DETERIORATING) from the
+    breadth module, in-memory cached ~10 min. Fail-soft → None (the conviction
+    flag gate then treats the regime as unknown = full weight)."""
+    now = time.time()
+    if now - _REGIME_CACHE["at"] < _REGIME_TTL:
+        return _REGIME_CACHE["value"]
+    value = None
+    try:
+        from modules.breadth import _full_series
+        from modules.breadth import regime as breadth_regime
+        agg, der, _index = _full_series("sp500")
+        if agg is not None:
+            labels = breadth_regime.regime_series(der["summation"], agg["pct_above_200"])
+            if len(labels):
+                value = str(labels.iloc[-1])
+    except Exception:
+        value = None
+    _REGIME_CACHE.update(at=now, value=value)
+    return value
+
+
+def _regime_label_series(dates):
+    """Per-date regime labels aligned to `dates` (for win-rate conditioning).
+    Fail-soft → None."""
+    try:
+        from modules.breadth import _full_series
+        from modules.breadth import regime as breadth_regime
+        agg, der, _index = _full_series("sp500")
+        if agg is None:
+            return None
+        labels = breadth_regime.regime_series(der["summation"], agg["pct_above_200"])
+        return breadth_regime.align_labels(labels, dates)   # handles str/Timestamp mismatch
+    except Exception:
+        return None
+
+
+def flag_win_rates_for(symbols, period=FLAG_WR_PERIOD):
+    """Per-symbol regime-conditioned flag win rates from each symbol's own
+    price+volume, via the shared `flags.win_rates`. Process-lifetime cached per
+    symbol (win rates barely move; the user wants these computed rarely). Returns
+    {symbol: {"bull", "bull_n", "bear", "bear_n"}}. Fail-soft → {} on any error.
+
+    Used for the ~11 sector ETFs in the live conviction engine (they're not in the
+    screener's stock universe, so the background `flag_winrate` table can't serve
+    them). The stock universe is served by the screener precompute instead."""
+    symbols = [s for s in symbols if s]
+    todo = [s for s in symbols if s not in _FLAG_WR_CACHE]
+    if todo:
+        try:
+            ohlc = fetch_ohlc(todo, period=period)
+            close, vol = ohlc.get("close"), ohlc.get("volume")
+            reg = _regime_label_series(close.index) if close is not None else None
+            reg_arr = reg.to_numpy() if reg is not None else None
+            for s in todo:
+                if close is None or s not in close.columns:
+                    _FLAG_WR_CACHE[s] = {"bull": None, "bull_n": 0, "bear": None, "bear_n": 0}
+                    continue
+                v = vol[s].to_numpy(dtype=float) if (vol is not None and s in vol.columns) else None
+                _FLAG_WR_CACHE[s] = flags.win_rates(
+                    close[s].to_numpy(dtype=float), v, regime_labels=reg_arr)
+        except Exception:
+            for s in todo:
+                _FLAG_WR_CACHE.setdefault(s, {"bull": None, "bull_n": 0, "bear": None, "bear_n": 0})
+    return {s: _FLAG_WR_CACHE.get(s, {}) for s in symbols}
+
+
+def exhaustion_for(symbols, period=FLAG_WR_PERIOD):
+    """Current volume buyer/seller exhaustion per symbol from daily OHLCV (one
+    cached `fetch_ohlc`). Returns {symbol: "buyer"/"seller"/None}. Fail-soft → {}."""
+    symbols = [s for s in symbols if s]
+    if not symbols:
+        return {}
+    try:
+        ohlc = fetch_ohlc(symbols, period=period)
+    except Exception:
+        return {}
+    high, low, close, vol = (ohlc.get("high"), ohlc.get("low"),
+                             ohlc.get("close"), ohlc.get("volume"))
+    if close is None or vol is None:
+        return {}
+    out = {}
+    for s in symbols:
+        if s in close.columns and s in vol.columns and s in high.columns and s in low.columns:
+            try:                                   # series share one index → keep aligned
+                out[s] = exhaustion.current_exhaustion(high[s], low[s], close[s], vol[s])
+            except Exception:
+                out[s] = None
     return out
 
 
@@ -1067,11 +1225,17 @@ def compute_series(tickers, benchmark, interval, asof=None, params=None, close=N
     return out, date, close
 
 
-def evaluate_tail(window, params=None):
+def evaluate_tail(window, params=None, flag_wr=None, regime=None, vol_exh=None):
     """Compute the quadrant + Elliott-wave call/scores for one tail window. The
     quadrant/heading/accum/distrib still come from the SIGNAL coords (chart
     geometry + call-card ranking); the call itself is driven by the wave/Fib
-    state read off the head row's precomputed wave features."""
+    state read off the head row's precomputed wave features.
+
+    `flag_wr` ({"bull","bull_n","bear","bear_n"}), `regime` (HEALTHY/NEUTRAL/
+    DETERIORATING), and `vol_exh` ("buyer"/"seller") are the LIVE-only conviction
+    refinements (per-symbol flag edge, regime gate, volume exhaustion). They
+    default to None so `replay_calls` / the backtest keep the basket-default flag
+    weight and stay deterministic (no point-in-time-regime lookahead)."""
     ratios  = [round(v, 3) for v in window["sig_ratio"].tolist()]
     moments = [round(v, 3) for v in window["sig_mom"].tolist()]
 
@@ -1105,6 +1269,13 @@ def evaluate_tail(window, params=None):
         "mtf_1d":     head.get("mtf_1d", 0.0),
         "mtf_1h":     head.get("mtf_1h", 0.0),
         "flag":       head.get("flag", 0.0),
+        # live-only conviction refinements (None in the backtest)
+        "flag_win_bull": (flag_wr or {}).get("bull"),
+        "flag_n_bull":   (flag_wr or {}).get("bull_n", 0),
+        "flag_win_bear": (flag_wr or {}).get("bear"),
+        "flag_n_bear":   (flag_wr or {}).get("bear_n", 0),
+        "regime":     regime,
+        "vol_exh":    vol_exh,
     }
     conviction, factors = _conviction(ws, params)
     ws["_score"] = conviction                 # avoid recomputing inside the call
@@ -1128,6 +1299,8 @@ def evaluate_tail(window, params=None):
         "div_rs":        None if ws["div_rs"] == "none" else ws["div_rs"],
         "div_px":        None if ws["div_px"] == "none" else ws["div_px"],
         "div_confluence": _div_confluence(ws),
+        "regime":        regime,
+        "vol_exh":       vol_exh,
         "dir":           _direction(ratios, moments),
         "accum":         accum,
         "distrib":       distrib,
