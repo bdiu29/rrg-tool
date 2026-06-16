@@ -11,7 +11,8 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from modules.rrg import flags, exhaustion, signal
+from modules.confluence import flags, exhaustion
+from modules.rrg import signal
 
 
 def _bull_flag_close():

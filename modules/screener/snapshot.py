@@ -21,7 +21,7 @@ import pandas as pd
 from modules.breadth import store as breadth_store
 from modules.breadth import universes as breadth_universes
 from modules.breadth.datasource import resolve_datasource
-from modules.rrg import flags as rrg_flags
+from modules.confluence import flags as rrg_flags
 from modules.screener import metrics, poller, quotes, store
 
 YF_THROTTLE  = 0.5    # seconds between per-symbol yfinance calls

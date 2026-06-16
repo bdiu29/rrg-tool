@@ -27,7 +27,7 @@ import numpy as np
 import yfinance as yf
 
 from .signal import DEFAULT_TICKERS, BENCHMARK
-from .flags import _detect, _summary, _regime_ok, SUCCESS_H   # the shared detection core
+from modules.confluence.flags import _detect, _summary, _regime_ok, SUCCESS_H   # the shared detection core
 
 
 def _regime_labels_for(dates):

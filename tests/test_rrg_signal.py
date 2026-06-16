@@ -17,6 +17,7 @@ import numpy as np
 import pandas as pd
 
 from modules.rrg import signal
+from modules.confluence import wave   # the wave engine moved here (Stage-2 extraction)
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +153,7 @@ def _impulse_rs():
 
 class TestWaveEngine(unittest.TestCase):
     def test_zigzag_swings_significant_and_alternating(self):
-        piv = signal._zigzag_swings(_impulse_rs(), signal.DEFAULTS["ZIGZAG_K"])
+        piv = wave._zigzag_swings(_impulse_rs(), signal.DEFAULTS["ZIGZAG_K"])
         kinds = [p["kind"] for p in piv]
         self.assertTrue(all(kinds[i] != kinds[i + 1] for i in range(len(kinds) - 1)))
         self.assertGreaterEqual(len(piv), 4)
@@ -163,7 +164,7 @@ class TestWaveEngine(unittest.TestCase):
     def test_features_label_the_full_impulse(self):
         # the idealized clean legs need a lower ZigZag threshold than noisy real
         # data; the labeling logic under test is unchanged by k.
-        feats = signal._wave_features(_impulse_rs(), {"ZIGZAG_K": 0.7})
+        feats = wave._wave_features(_impulse_rs(), {"ZIGZAG_K": 0.7})
         labels = set(feats["wave_label"].unique())
         self.assertTrue({"wave-2", "wave-3", "wave-4", "wave-5"} <= labels)
 
@@ -175,9 +176,9 @@ class TestWaveEngine(unittest.TestCase):
         rng = np.random.default_rng(7)
         s = pd.Series(np.cumsum(rng.normal(0, 2, 600)) + 200,
                       index=pd.bdate_range("2021-01-04", periods=600))
-        full = signal._wave_features(s, None)
+        full = wave._wave_features(s, None)
         cut = len(s) - 60
-        trunc = signal._wave_features(s.iloc[:cut], None)
+        trunc = wave._wave_features(s.iloc[:cut], None)
         for c in ("wv_trend", "wv_leg", "wave_label", "abc_type", "div_rs", "div_px"):
             self.assertEqual(full[c].iloc[:cut].astype(str).tolist(),
                              trunc[c].astype(str).tolist(), f"{c} leaked future data")
@@ -196,7 +197,7 @@ class TestWaveEngine(unittest.TestCase):
                + leg(101, 160, 32) + leg(160, 150, 12) + leg(150, 185, 24)   # 1-2-3-4-5
                + leg(185, 158, 16) + leg(158, 168, 10) + leg(168, 148, 16))  # A-B-C
         s = pd.Series(seq, index=pd.bdate_range("2022-01-03", periods=len(seq)))
-        feats = signal._wave_features(s, {"ZIGZAG_K": 0.7})
+        feats = wave._wave_features(s, {"ZIGZAG_K": 0.7})
         abc = feats[feats["wv_leg"] == "abc"]
         self.assertTrue({"wave-A", "wave-B", "wave-C"} <= set(abc["wave_label"]))
 
@@ -216,7 +217,7 @@ class TestWaveEngine(unittest.TestCase):
 class TestDivergence(unittest.TestCase):
     def test_rsi_bounds(self):
         s = pd.Series(np.r_[np.linspace(100, 130, 40), np.linspace(130, 115, 20)])
-        r = signal._rsi(s).dropna()
+        r = wave._rsi(s).dropna()
         self.assertTrue((r >= 0).all() and (r <= 100).all())
 
     def test_bearish_divergence_on_a_lower_momentum_high(self):
@@ -225,7 +226,7 @@ class TestDivergence(unittest.TestCase):
             return list(np.linspace(a, b, n))[1:]
         seq = [100] + leg(100, 130, 20) + leg(130, 118, 12) + leg(118, 133, 40)
         s = pd.Series(seq, index=pd.bdate_range("2022-01-03", periods=len(seq)))
-        feats = signal._wave_features(s, None, price=s)
+        feats = wave._wave_features(s, None, price=s)
         self.assertEqual(feats["div_rs"].iloc[-1], "bear")
 
     def test_divergence_raises_wave2_conviction(self):

@@ -1,0 +1,520 @@
+{
+ "1d": {
+  "best": {
+   "accum": 77,
+   "dir": "\u2192\u2193",
+   "momentum": 104.167,
+   "name": "AAA",
+   "quadrant": "Leading",
+   "ratio": 103.608,
+   "ticker": "AAA"
+  },
+  "date": "2024-02-22",
+  "regime": null,
+  "rotation": null,
+  "sectors": {
+   "AAA": {
+    "abc_type": null,
+    "accum": 77,
+    "c_target_hi": null,
+    "c_target_lo": null,
+    "call": "\u26a0\ufe0f w3 extended",
+    "call_why": "wave-3 extended with exhaustion confluence \u2014 trim into strength \u00b7 confluence: HTF+LTF",
+    "change_pct": -0.01,
+    "conviction": -52.0,
+    "conviction_factors": [
+     [
+      "1mo wave",
+      -24.0
+     ],
+     [
+      "1d wave",
+      -12.0
+     ],
+     [
+      "1h wave",
+      -6.0
+     ],
+     [
+      "clean count",
+      -10.0
+     ]
+    ],
+    "dates": [
+     "2024-01-19",
+     "2024-01-26",
+     "2024-02-02",
+     "2024-02-09",
+     "2024-02-16",
+     "2024-02-22"
+    ],
+    "dir": "\u2192\u2193",
+    "distrib": 30,
+    "div_confluence": "bearish: HTF+LTF",
+    "div_px": null,
+    "div_rs": null,
+    "ext_ratio": 0.663,
+    "fib_target": 123.894,
+    "heading": "NE",
+    "heading_angle": 33.6,
+    "heading_arrow": "\u2197",
+    "leg_kind": "impulse",
+    "momentum": [
+     100.399,
+     100.472,
+     100.926,
+     103.636,
+     104.843,
+     104.167
+    ],
+    "name": "AAA",
+    "phase": "wave-3",
+    "poc": null,
+    "quadrant": "Leading",
+    "ratio": [
+     93.311,
+     94.624,
+     96.727,
+     99.334,
+     101.875,
+     103.608
+    ],
+    "regime": null,
+    "rel_pct": 0.07,
+    "retrace_pct": null,
+    "rotation": null,
+    "strength": 100,
+    "trend": "up",
+    "vah": null,
+    "val": null,
+    "vol_exh": null,
+    "vp_shape": null,
+    "vp_zone": null,
+    "wave_label": "wave-3"
+   },
+   "BBB": {
+    "abc_type": null,
+    "accum": 42,
+    "c_target_hi": null,
+    "c_target_lo": null,
+    "call": "AVOID",
+    "call_why": "Down-impulse not finished \u2014 stay out",
+    "change_pct": -0.38,
+    "conviction": 42.4,
+    "conviction_factors": [
+     [
+      "1d wave",
+      12.0
+     ],
+     [
+      "1h wave",
+      6.0
+     ],
+     [
+      "RS div\u2191",
+      14.4
+     ],
+     [
+      "clean count",
+      10.0
+     ]
+    ],
+    "dates": [
+     "2024-01-19",
+     "2024-01-26",
+     "2024-02-02",
+     "2024-02-09",
+     "2024-02-16",
+     "2024-02-22"
+    ],
+    "dir": "\u2190\u2193",
+    "distrib": 75,
+    "div_confluence": "bullish: RS+LTF",
+    "div_px": null,
+    "div_rs": "bull",
+    "ext_ratio": 0.802,
+    "fib_target": 43.441,
+    "heading": "SW",
+    "heading_angle": 232.0,
+    "heading_arrow": "\u2199",
+    "leg_kind": "impulse",
+    "momentum": [
+     101.258,
+     102.189,
+     102.061,
+     100.807,
+     99.154,
+     98.298
+    ],
+    "name": "BBB",
+    "phase": "wave-3",
+    "poc": null,
+    "quadrant": "Lagging",
+    "ratio": [
+     93.134,
+     94.123,
+     94.09,
+     93.066,
+     91.029,
+     88.928
+    ],
+    "regime": null,
+    "rel_pct": -0.3,
+    "retrace_pct": null,
+    "rotation": null,
+    "strength": 91,
+    "trend": "down",
+    "vah": null,
+    "val": null,
+    "vol_exh": null,
+    "vp_shape": null,
+    "vp_zone": null,
+    "wave_label": "wave-3"
+   },
+   "CCC": {
+    "abc_type": null,
+    "accum": 75,
+    "c_target_hi": null,
+    "c_target_lo": null,
+    "call": "ROTATE OUT",
+    "call_why": "Counter-trend bounce into the down-leg pocket \u2014 sell into it",
+    "change_pct": 0.69,
+    "conviction": -70.0,
+    "conviction_factors": [
+     [
+      "wk wave",
+      -30.8
+     ],
+     [
+      "1mo wave",
+      -52.1
+     ],
+     [
+      "1d wave",
+      -22.8
+     ],
+     [
+      "1h wave",
+      -11.4
+     ],
+     [
+      "clean count",
+      -10.0
+     ]
+    ],
+    "dates": [
+     "2024-01-19",
+     "2024-01-26",
+     "2024-02-02",
+     "2024-02-09",
+     "2024-02-16",
+     "2024-02-22"
+    ],
+    "dir": "\u2192\u2193",
+    "distrib": 29,
+    "div_confluence": null,
+    "div_px": null,
+    "div_rs": null,
+    "ext_ratio": null,
+    "fib_target": null,
+    "heading": "NE",
+    "heading_angle": 29.9,
+    "heading_arrow": "\u2197",
+    "leg_kind": "corrective",
+    "momentum": [
+     100.181,
+     100.183,
+     100.224,
+     102.245,
+     104.197,
+     103.428
+    ],
+    "name": "CCC",
+    "phase": "wave-2",
+    "poc": null,
+    "quadrant": "Improving",
+    "ratio": [
+     88.966,
+     90.976,
+     93.57,
+     95.739,
+     97.603,
+     99.214
+    ],
+    "regime": null,
+    "rel_pct": 0.77,
+    "retrace_pct": 0.859,
+    "rotation": null,
+    "strength": 100,
+    "trend": "down",
+    "vah": null,
+    "val": null,
+    "vol_exh": null,
+    "vp_shape": null,
+    "vp_zone": null,
+    "wave_label": "wave-2"
+   }
+  }
+ },
+ "1wk": {
+  "best": {
+   "accum": 58,
+   "dir": "\u00b7\u2191",
+   "momentum": 100.189,
+   "name": "CCC",
+   "quadrant": "Leading",
+   "ratio": 104.5,
+   "ticker": "CCC"
+  },
+  "date": "2024-02-22",
+  "regime": null,
+  "rotation": null,
+  "sectors": {
+   "AAA": {
+    "abc_type": null,
+    "accum": 15,
+    "c_target_hi": null,
+    "c_target_lo": null,
+    "call": "WATCH",
+    "call_why": "No clean wave/Fib setup \u2014 standing by",
+    "change_pct": -0.01,
+    "conviction": -70.0,
+    "conviction_factors": [
+     [
+      "1mo wave",
+      -24.0
+     ],
+     [
+      "1d wave",
+      -12.0
+     ],
+     [
+      "1h wave",
+      -6.0
+     ],
+     [
+      "RS div\u2193",
+      -14.4
+     ],
+     [
+      "px div\u2193",
+      -14.4
+     ]
+    ],
+    "dates": [
+     "2024-02-15",
+     "2024-02-16",
+     "2024-02-19",
+     "2024-02-20",
+     "2024-02-21",
+     "2024-02-22"
+    ],
+    "dir": "\u2190\u2193",
+    "distrib": 94,
+    "div_confluence": "bearish: RS+price+HTF+LTF",
+    "div_px": "bear",
+    "div_rs": "bear",
+    "ext_ratio": null,
+    "fib_target": null,
+    "heading": "S",
+    "heading_angle": 264.1,
+    "heading_arrow": "\u2193",
+    "leg_kind": "corrective",
+    "momentum": [
+     103.877,
+     102.686,
+     101.793,
+     100.878,
+     99.717,
+     99.113
+    ],
+    "name": "AAA",
+    "phase": "\u2014",
+    "poc": null,
+    "quadrant": "Weakening",
+    "ratio": [
+     106.534,
+     106.497,
+     106.365,
+     106.213,
+     105.899,
+     105.64
+    ],
+    "regime": null,
+    "rel_pct": 0.07,
+    "retrace_pct": null,
+    "rotation": null,
+    "strength": 73,
+    "trend": "down",
+    "vah": null,
+    "val": null,
+    "vol_exh": null,
+    "vp_shape": null,
+    "vp_zone": null,
+    "wave_label": "\u2014"
+   },
+   "BBB": {
+    "abc_type": null,
+    "accum": 52,
+    "c_target_hi": null,
+    "c_target_lo": null,
+    "call": "AVOID",
+    "call_why": "Down-impulse not finished \u2014 stay out",
+    "change_pct": -0.38,
+    "conviction": 42.4,
+    "conviction_factors": [
+     [
+      "1d wave",
+      12.0
+     ],
+     [
+      "1h wave",
+      6.0
+     ],
+     [
+      "RS div\u2191",
+      14.4
+     ],
+     [
+      "clean count",
+      10.0
+     ]
+    ],
+    "dates": [
+     "2024-02-15",
+     "2024-02-16",
+     "2024-02-19",
+     "2024-02-20",
+     "2024-02-21",
+     "2024-02-22"
+    ],
+    "dir": "\u2190\u2193",
+    "distrib": 57,
+    "div_confluence": "bullish: RS+LTF",
+    "div_px": null,
+    "div_rs": "bull",
+    "ext_ratio": 0.804,
+    "fib_target": 40.181,
+    "heading": "SW",
+    "heading_angle": 208.7,
+    "heading_arrow": "\u2199",
+    "leg_kind": "impulse",
+    "momentum": [
+     96.813,
+     96.685,
+     96.512,
+     96.414,
+     96.213,
+     95.94
+    ],
+    "name": "BBB",
+    "phase": "wave-3",
+    "poc": null,
+    "quadrant": "Lagging",
+    "ratio": [
+     96.122,
+     95.489,
+     94.763,
+     94.25,
+     93.678,
+     93.216
+    ],
+    "regime": null,
+    "rel_pct": -0.3,
+    "retrace_pct": null,
+    "rotation": null,
+    "strength": 28,
+    "trend": "down",
+    "vah": null,
+    "val": null,
+    "vol_exh": null,
+    "vp_shape": null,
+    "vp_zone": null,
+    "wave_label": "wave-3"
+   },
+   "CCC": {
+    "abc_type": null,
+    "accum": 58,
+    "c_target_hi": null,
+    "c_target_lo": null,
+    "call": "ROTATE OUT",
+    "call_why": "Counter-trend bounce into the down-leg pocket \u2014 sell into it",
+    "change_pct": 0.69,
+    "conviction": -70.0,
+    "conviction_factors": [
+     [
+      "wk wave",
+      -36.5
+     ],
+     [
+      "1mo wave",
+      -52.1
+     ],
+     [
+      "1d wave",
+      -22.8
+     ],
+     [
+      "1h wave",
+      -11.4
+     ],
+     [
+      "clean count",
+      -10.0
+     ]
+    ],
+    "dates": [
+     "2024-02-15",
+     "2024-02-16",
+     "2024-02-19",
+     "2024-02-20",
+     "2024-02-21",
+     "2024-02-22"
+    ],
+    "dir": "\u00b7\u2191",
+    "distrib": 48,
+    "div_confluence": null,
+    "div_px": null,
+    "div_rs": null,
+    "ext_ratio": null,
+    "fib_target": null,
+    "heading": "N",
+    "heading_angle": 79.5,
+    "heading_arrow": "\u2191",
+    "leg_kind": "corrective",
+    "momentum": [
+     99.141,
+     98.928,
+     99.183,
+     99.683,
+     99.99,
+     100.189
+    ],
+    "name": "CCC",
+    "phase": "wave-2",
+    "poc": null,
+    "quadrant": "Leading",
+    "ratio": [
+     104.148,
+     104.14,
+     104.183,
+     104.356,
+     104.397,
+     104.5
+    ],
+    "regime": null,
+    "rel_pct": 0.77,
+    "retrace_pct": 0.835,
+    "rotation": null,
+    "strength": 23,
+    "trend": "down",
+    "vah": null,
+    "val": null,
+    "vol_exh": null,
+    "vp_shape": null,
+    "vp_zone": null,
+    "wave_label": "wave-2"
+   }
+  }
+ }
+}
