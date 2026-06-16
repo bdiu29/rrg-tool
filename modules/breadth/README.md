@@ -52,7 +52,7 @@ heat-colored, plus Advancing/Declining and New-High/New-Low gauge bars and a **C
 button (renders the tape to a PNG and writes it to the clipboard; downloads as a fallback).
 
 <p align="center">
-  <img src="../../assets/screenshots/breadth-tape.png" alt="Breadth Tape — Stockbee-style Market Monitor daily breadth table" width="800"/>
+  <img src="../../assets/breadth-tape.png" alt="Breadth Tape — Stockbee-style Market Monitor daily breadth table" width="800"/>
 </p>
 
 Columns: **Up/Down 4%+ Today**, **5/10 Day Ratio** (Σ up4% / Σ down4%), **Up/Down 25%+ Quarter**

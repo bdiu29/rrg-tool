@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 #
-# Capture screenshots of every page into assets/screenshots/ using Safari +
-# macOS `screencapture` (no extra dependencies). The READMEs already reference
-# these paths, so once this runs the images show up.
+# Capture screenshots of every page into assets/ using Safari + macOS
+# `screencapture` (no extra dependencies). Files are named to match the images
+# the READMEs already embed (e.g. the RRG page → chart.png), so each run just
+# refreshes the heroes in place. Hand-cropped extras (rotation-calls.png,
+# backtest.png) are not page captures and are left untouched.
 #
 # Usage:
 #   1. Start the app in another terminal:   python3 app.py
@@ -29,13 +31,14 @@ WIN_Y=30
 
 BASE="http://localhost:${PORT}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="${ROOT}/assets/screenshots"
+OUT="${ROOT}/assets"
 mkdir -p "$OUT"
 
 # name | path | optional-JS-to-run-before-capture
+# (name = output filename stem; the RRG page writes chart.png to match the README)
 PAGES=(
   "home|/|"
-  "rrg|/rrg.html|"
+  "chart|/rrg.html|"
   "breadth|/breadth.html|"
   "breadth-tape|/breadth.html|switchView('tape')"
   "screener|/screener.html|"
@@ -77,7 +80,7 @@ APPLESCRIPT
   echo "  ✓ ${name}.png"
 }
 
-echo "Capturing ${#PAGES[@]} pages from ${BASE} → assets/screenshots/"
+echo "Capturing ${#PAGES[@]} pages from ${BASE} → assets/"
 for p in "${PAGES[@]}"; do
   IFS='|' read -r name path js <<< "$p"
   capture "$name" "${BASE}${path}" "$js"

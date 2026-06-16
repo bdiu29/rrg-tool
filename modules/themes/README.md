@@ -3,7 +3,7 @@
 [← Back to main README](../../README.md)
 
 <p align="center">
-  <img src="../../assets/screenshots/themes.png" alt="Theme tracker — theme RRG, ranking, and constituents" width="800"/>
+  <img src="../../assets/themes.png" alt="Theme tracker — theme RRG, ranking, and constituents" width="800"/>
 </p>
 
 Track **custom investment themes** the same way the [Rankings](../rankings/README.md) and [RRG](../rrg/README.md) modules track sectors. A theme is a hand-picked basket of stocks (e.g. *AI Biotech* = RXRX, SDGR, TEM, …); the tracker turns each basket into an equal-weight index, scores it 0-99 vs SPY, plots all the themes on a rotation chart, and lets you drill into the underlying names — and you edit the baskets right in the page.

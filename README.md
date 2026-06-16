@@ -120,26 +120,7 @@ Then open **http://localhost:8000**. Press `Ctrl+C` in the terminal to stop.
 
 ## Screenshots
 
-<table>
-  <tr>
-    <td width="50%"><a href="http://localhost:8000/"><img src="assets/screenshots/home.png" alt="Home hub" width="100%"/></a><br/><sub><b>Home</b> — module hub with live status badges</sub></td>
-    <td width="50%"><a href="http://localhost:8000/rrg.html"><img src="assets/screenshots/rrg.png" alt="RRG sector rotation" width="100%"/></a><br/><sub><b>RRG</b> — sector rotation + conviction calls</sub></td>
-  </tr>
-  <tr>
-    <td><a href="http://localhost:8000/breadth.html"><img src="assets/screenshots/breadth.png" alt="Market breadth dashboard" width="100%"/></a><br/><sub><b>Breadth</b> — regime, divergences, breadth panels</sub></td>
-    <td><a href="http://localhost:8000/breadth.html"><img src="assets/screenshots/breadth-tape.png" alt="Breadth Tape — Market Monitor" width="100%"/></a><br/><sub><b>Breadth Tape</b> — Stockbee-style Market Monitor</sub></td>
-  </tr>
-  <tr>
-    <td><a href="http://localhost:8000/screener.html"><img src="assets/screenshots/screener.png" alt="Stock screener" width="100%"/></a><br/><sub><b>Screener</b> — filters, watchlists, alerts</sub></td>
-    <td><a href="http://localhost:8000/rankings.html"><img src="assets/screenshots/rankings.png" alt="Sector leaderboard" width="100%"/></a><br/><sub><b>Rankings</b> — sector RS leaderboard + movers</sub></td>
-  </tr>
-  <tr>
-    <td><a href="http://localhost:8000/themes.html"><img src="assets/screenshots/themes.png" alt="Theme tracker" width="100%"/></a><br/><sub><b>Themes</b> — theme baskets, RRG + constituents</sub></td>
-    <td></td>
-  </tr>
-</table>
-
-Screenshots live in [`assets/screenshots/`](assets/screenshots/). To (re)generate them on a Mac — no extra dependencies, uses Safari + the built-in `screencapture`:
+Each module's README opens with a screenshot of its page (see the [Modules](#modules) table above). They live in [`assets/`](assets/); to (re)generate them on a Mac — no extra dependencies, uses Safari + the built-in `screencapture`:
 
 ```bash
 python3 app.py                          # in one terminal

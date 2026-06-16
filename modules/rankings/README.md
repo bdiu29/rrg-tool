@@ -3,7 +3,7 @@
 [← Back to main README](../../README.md)
 
 <p align="center">
-  <img src="../../assets/screenshots/rankings.png" alt="Sector ETF relative-strength leaderboard with rank movers" width="800"/>
+  <img src="../../assets/rankings.png" alt="Sector ETF relative-strength leaderboard with rank movers" width="800"/>
 </p>
 
 A scannable relative-strength leaderboard for the 11 SPDR Select Sector ETFs, benchmarked against SPY. Where the [RRG](../rrg/README.md) shows *direction of travel* on a chart, Rankings answers a flatter question at a glance: **which sectors are strongest right now, and which are gaining or losing ground?**
