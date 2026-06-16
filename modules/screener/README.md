@@ -14,13 +14,15 @@ Open at **http://localhost:8000/screener.html**. Reads daily bars from the [Brea
 
 ## What it does
 
-- **Screen** the whole market with a condition builder — price/volume/RVOL, SMA & **EMA** relations (5/10/20/50/100/200), RSI, ATR, relative strength vs SPY (1m/3m), 52-week distances, gaps, **golden-pocket** Fibonacci state, market cap, P/E, dividend yield, beta, days-to-earnings, sector, and the sector's RRG call as a filterable column.
-- **Save** named screens; five presets ship built in (the first two are your real TradingView presets):
+- **Screen** the whole market with a condition builder — price/volume/RVOL, SMA & **EMA** relations (5/10/20/50/100/200), RSI, ATR, relative strength vs SPY (1m/3m), 52-week distances, gaps, **golden-pocket** Fibonacci state, **bull/bear flag** state, **volume buyer/seller exhaustion**, market cap, P/E, dividend yield, beta, days-to-earnings, sector, and the sector's RRG call as a filterable column.
+- **Save** named screens; nine presets ship built in (the first two are your real TradingView presets):
   - **Breakout** — MktCap 10M–10T · Vol chg > 80% · Vol > 100k · Price ≥ 50SMA · RVOL > 1
   - **Continuation** — Price > 50SMA · Chg > 2% · MktCap 100M–10T · Vol chg > 80% · Vol > 100k · Price > 150SMA
   - **Volume Building** — RVOL ≥ 2 · \|Chg\| ≤ 3% · Vol > 100k — heavy tape while price is still quiet (volume leading price, the pre-pump read); deliberately no trend filters, so clone and tighten
   - **Golden Pocket** — price inside the bullish 0.618–0.786 retracement of its latest up-swing
   - **Approaching Golden Pocket** — price retraced 0.5–0.618 toward that pocket (lead time before it arrives)
+  - **Bull Flag / Bear Flag** — an impulsive flagpole + a brief, shallow, tapering-volume consolidation (continuation pattern)
+  - **Selling Climax / Buying Climax** — a volume spike into a new low/high that closes strong/weak (capitulation / blow-off — a bottoming / topping tell)
 - **Watch** symbols in named lists; ★ any scan row to add. The **Risk $** input adds a Shares column = `floor(risk ÷ ATR14)` for volatility-based position sizing.
 - **Get alerted** when a position or watchlist symbol shows a pump/dump signal, in-app (feed + home-hub badge + dots on the Schwab page) and optionally via Discord/email.
 - **Backtest** the current screen as an entry signal over history — win rate, expectancy, profit factor, forward returns vs SPY, and an equity curve, exportable to Markdown (see [Backtester](#backtester) below).
@@ -52,6 +54,15 @@ Rolling high/low *levels* are stored shifted one day, so "price crosses yesterda
   - `gp_in_pocket` — `1` when retrace is in the 0.618–0.786 golden pocket
   - `gp_approaching` — `1` when retrace is 0.5–0.618 (on its way in, not there yet; excludes anything past 0.786)
   - `gp_zone_low` / `gp_zone_high` — the pocket as actual price levels
+
+### Flags & volume exhaustion
+
+These reuse the RRG module's `flags` / `exhaustion` leaves (one definition shared with the rotation engine), expressed as vectorized snapshot fields here — both no-lookahead (trailing windows only):
+
+- **`flag`** — `bull` / `bear` / `none`. A strong **flagpole** (≥6% move over ~10 bars) followed by a brief, shallow consolidation (retrace ≤45% of the pole) on **tapering volume** → continuation in the pole's direction.
+- **`exhaustion`** — `buyer` / `seller` / `none`. A **volume climax** (≥2× the 20-day average) into a new 20-bar high/low that closes in the weak/strong end of its range — buyer exhaustion (a topping blow-off) or seller exhaustion (a capitulation bottom).
+
+A separate background job also precomputes each universe symbol's **historical flag win-rate** (regime-conditioned, **~90-day per-symbol cache**); those are read by the Rankings and Themes pages to show how reliable a name's flags have been.
 
 ---
 

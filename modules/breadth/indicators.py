@@ -22,6 +22,15 @@ EMA_WINDOWS     = (5, 10, 20)     # for count/% of stocks above N-day EMA (short
 NH_NL_WINDOW    = 252             # 52-week new highs / new lows
 HL_INDEX_SMOOTH = 10              # High-Low Index = 10-day SMA of NH/(NH+NL)
 
+# Market Monitor (Stockbee-style breadth sheet) parameters.
+MM_RATIO_WINS = (5, 10)           # 5-/10-day ratio of (Σ up4%) / (Σ down4%)
+MM_QUARTER    = 65                # ~one quarter of trading days
+MM_MONTH      = 20                # ~one month of trading days
+MM_D34        = 34               # 34-day momentum window
+MM_ATR_WIN    = 14                # Wilder ATR span for the extension count
+MM_ATR_MULT   = 10                # close ≥ this many ATRs above SMA50 ⇒ "extended"
+MM_EXT_MA     = 50                # moving-average baseline for the ATR extension
+
 # Zweig Breadth Thrust: 10-day EMA of adv/(adv+dec) travelling from below
 # 0.40 to above 0.615 within at most 10 trading days.
 ZBT_SPAN     = 10
@@ -78,6 +87,76 @@ def daily_aggregates(close, volume):
         out[f"n_above_{w}ema"]   = above.sum(axis=1)
         out[f"pct_above_{w}ema"] = 100.0 * above.sum(axis=1) / denom
 
+    roll_max = close.rolling(NH_NL_WINDOW, min_periods=NH_NL_WINDOW).max()
+    roll_min = close.rolling(NH_NL_WINDOW, min_periods=NH_NL_WINDOW).min()
+    out["new_highs"] = ((close >= roll_max) & roll_max.notna()).sum(axis=1)
+    out["new_lows"]  = ((close <= roll_min) & roll_min.notna()).sum(axis=1)
+
+    out["n_symbols"] = valid.sum(axis=1)
+    return out[out["n_symbols"] > 0]
+
+
+# ---------------------------------------------------------------------------
+# Market Monitor — Stockbee-style breadth sheet
+# ---------------------------------------------------------------------------
+
+def market_monitor(close, high, low):
+    """Per-day cross-sectional counts behind the breadth sheet.
+
+    close/high/low: date-indexed DataFrames, one column per symbol. Same
+    eligible-denominator discipline as daily_aggregates — a symbol only counts
+    toward an N-day window once it has N prior bars, so thin early history can't
+    inflate the counts. Pure pandas, no I/O.
+    """
+    close = close.sort_index()
+    high  = high.reindex_like(close)
+    low   = low.reindex_like(close)
+
+    prev  = close.shift(1)
+    valid = close.notna() & prev.notna()
+    chg1  = close / prev - 1.0
+
+    out = pd.DataFrame(index=close.index)
+
+    # --- primary: ±4% days + their rolling ratios ---
+    up4   = ((chg1 >= 0.04) & valid).sum(axis=1)
+    down4 = ((chg1 <= -0.04) & valid).sum(axis=1)
+    out["up4"]   = up4
+    out["down4"] = down4
+    for w in MM_RATIO_WINS:
+        num = up4.rolling(w, min_periods=w).sum()
+        den = down4.rolling(w, min_periods=w).sum().replace(0, np.nan)
+        out[f"ratio{w}"] = num / den
+
+    # --- N-day momentum counts (quarter / month / 34-day) ---
+    def _ret_counts(window, up_thr, down_thr, up_name, down_name):
+        ret      = close / close.shift(window) - 1.0
+        eligible = close.shift(window).notna() & close.notna()
+        out[up_name]   = ((ret >= up_thr) & eligible).sum(axis=1)
+        out[down_name] = ((ret <= down_thr) & eligible).sum(axis=1)
+
+    _ret_counts(MM_QUARTER, 0.25, -0.25, "up25q", "down25q")
+    _ret_counts(MM_MONTH,   0.25, -0.25, "up25m", "down25m")
+    _ret_counts(MM_MONTH,   0.50, -0.50, "up50m", "down50m")
+    _ret_counts(MM_D34,     0.13, -0.13, "up13_34", "down13_34")
+
+    # --- 10× ATR extension: close that many ATRs above its SMA50 ---
+    prev_c = close.shift(1)
+    tr = np.maximum(np.maximum(high - low, (high - prev_c).abs()),
+                    (low - prev_c).abs())
+    atr  = tr.ewm(alpha=1.0 / MM_ATR_WIN, adjust=False, min_periods=MM_ATR_WIN).mean()
+    sma  = close.rolling(MM_EXT_MA, min_periods=MM_EXT_MA).mean()
+    ext  = (close - sma) / atr.replace(0, np.nan)
+    out["atr_ext"] = ((ext >= MM_ATR_MULT) & ext.notna()).sum(axis=1)
+
+    # --- % above the 50-day SMA (eligible denominator) ---
+    elig50 = sma.notna() & close.notna()
+    denom  = elig50.sum(axis=1).replace(0, np.nan)
+    out["pct_above_50"] = 100.0 * ((close > sma) & elig50).sum(axis=1) / denom
+
+    # --- advancers/decliners + 52-week new highs/lows (for the top gauges) ---
+    out["advances"] = ((chg1 > 0) & valid).sum(axis=1)
+    out["declines"] = ((chg1 < 0) & valid).sum(axis=1)
     roll_max = close.rolling(NH_NL_WINDOW, min_periods=NH_NL_WINDOW).max()
     roll_min = close.rolling(NH_NL_WINDOW, min_periods=NH_NL_WINDOW).min()
     out["new_highs"] = ((close >= roll_max) & roll_max.notna()).sum(axis=1)

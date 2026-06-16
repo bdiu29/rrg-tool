@@ -225,8 +225,56 @@
   .footnote strong { color: var(--ink); font-weight: 500; }
 
   .loading { color: var(--dim); font-size: 12px; padding: 40px; text-align: center; }
+  .chart-error { color: var(--red); font-size: 12px; padding: 40px; text-align: center; line-height: 1.7; }
+
+  /* ---- view tabs ---- */
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--grid); }
+  .tabs button {
+    background: transparent; border: none; border-bottom: 2px solid transparent;
+    color: var(--dim); font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600;
+    font-size: 14px; padding: 10px 14px; cursor: pointer; transition: all 0.15s; margin-bottom: -1px;
+  }
+  .tabs button:hover { color: var(--accent); }
+  .tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ---- breadth tape ---- */
+  .gauges { display: flex; gap: 26px; flex-wrap: wrap; margin-bottom: 16px; }
+  .gauge { flex: 1; min-width: 280px; }
+  .gauge-labels { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 5px; }
+  .gauge-labels b { font-weight: 600; }
+  .gauge-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden; border: 1px solid var(--grid); }
+  .gauge-bar span { display: block; height: 100%; }
+
+  .sheet-wrap { overflow-x: auto; border: 1px solid var(--grid); border-radius: 12px; background: #fff; }
+  table.tape { border-collapse: collapse; width: 100%; font-size: 12px; }
+  table.tape thead th {
+    position: sticky; top: 0; z-index: 2;
+    font-family: 'Bricolage Grotesque', sans-serif; font-weight: 600; color: #102a1a;
+    text-align: center; padding: 6px 10px; border: 1px solid rgba(255,255,255,0.55);
+    white-space: pre-line; line-height: 1.15;
+  }
+  table.tape thead tr.grp th { font-size: 12px; font-weight: 800; }
+  table.tape thead tr.cols th { font-size: 10.5px; font-weight: 600; }
+  th.g-yellow { background: #f4d35e; }
+  th.g-green  { background: #79c98a; }
+  th.g-purple { background: #c5a3e0; }
+  th.g-blue   { background: #8ec0ec; }
+  th.g-date   { background: var(--accent); color: #fff; }
+  th.c-yellow { background: #fbeec0; }
+  th.c-green  { background: #cfeed7; }
+  table.tape tbody td {
+    text-align: right; padding: 6px 11px; border: 1px solid var(--grid);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  table.tape tbody td.date {
+    position: sticky; left: 0; z-index: 1; text-align: left;
+    background: var(--panel); font-weight: 600; color: var(--ink); border-right: 2px solid var(--grid);
+  }
+  table.tape tbody td.neutral { color: var(--dim); }
+  table.tape tbody tr:hover td { outline: 1px solid rgba(22,51,110,0.18); }
 </style>
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 
@@ -242,7 +290,9 @@
     </div>
     <h1>Market Breadth<span class="sub">Participation vs <span id="index-sym">—</span> · regime &amp; divergences</span></h1>
   </div>
-  <div class="controls">
+
+  <!-- Dashboard controls -->
+  <div class="controls" id="controls-dashboard">
     <div class="ctl">
       <span class="ctl-label">Universe</span>
       <div class="toggle" id="universe-toggle"></div>
@@ -261,7 +311,40 @@
       <button class="btn" id="sync-btn">Update data</button>
     </div>
   </div>
+
+  <!-- Breadth Tape controls -->
+  <div class="controls" id="controls-tape" style="display:none">
+    <div class="ctl">
+      <span class="ctl-label">Universe</span>
+      <div class="toggle" id="tape-universe-toggle">
+        <button data-uni="all" class="active">All</button>
+        <button data-uni="sp500">S&amp;P 500</button>
+        <button data-uni="nyse">NYSE</button>
+        <button data-uni="nasdaq">Nasdaq</button>
+      </div>
+    </div>
+    <div class="ctl">
+      <span class="ctl-label">Rows</span>
+      <div class="toggle" id="tape-rows-toggle">
+        <button data-rows="20">20</button>
+        <button data-rows="30" class="active">30</button>
+        <button data-rows="60">60</button>
+      </div>
+    </div>
+    <div class="ctl">
+      <span class="ctl-label">&nbsp;</span>
+      <button class="btn" id="tape-copy-btn">Copy as image</button>
+    </div>
+  </div>
 </header>
+
+<div class="tabs">
+  <button data-view="dashboard" class="active">Dashboard</button>
+  <button data-view="tape">Breadth Tape</button>
+</div>
+
+<!-- ============ DASHBOARD VIEW ============ -->
+<div id="view-dashboard">
 
 <div class="banner" id="banner">
   <div class="regime-pill" id="regime-pill">—<span class="score"></span></div>
@@ -298,6 +381,37 @@
   McClellan Oscillator/Summation are <strong>ratio-adjusted</strong> (1000·(adv−dec)/(adv+dec)) so readings are comparable across universes of different size.
   Bullish Percent Index not shown — requires a point-&amp;-figure signal engine (stubbed).
 </p>
+
+</div><!-- /view-dashboard -->
+
+<!-- ============ BREADTH TAPE VIEW ============ -->
+<div id="view-tape" style="display:none">
+
+  <div id="tape-capture" style="background:#fff">
+    <div class="gauges" id="tape-gauges"></div>
+
+    <div class="sheet-wrap" id="tape-wrap">
+      <div class="loading" id="tape-loading">loading breadth tape…</div>
+      <table class="tape" id="tape-table" style="display:none">
+        <thead id="tape-thead"></thead>
+        <tbody id="tape-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="empty-state" id="tape-empty">
+    <p id="tape-empty-text">No local breadth data for this universe.</p>
+    <button class="btn" id="tape-empty-sync">Update data</button>
+  </div>
+
+  <div class="statusbar"><span id="tape-status">—</span></div>
+
+  <p class="footnote">
+    <strong>Reading the tape:</strong> green/red shading is relative within each column over the rows shown. ±4% counts and the 5/10-day ratios are short-term thrust; the 25%/50% month &amp; quarter counts and 13%/34-day counts are momentum participation. <strong>10x ATR Ext.</strong> = stocks ≥10×ATR(14) above their 50-day SMA (overextended). <strong>&gt;50dma</strong> = % of eligible stocks above their 50-day SMA. <strong>S&amp;P</strong> = ^GSPC close.<br>
+    <strong>Survivorship caveat:</strong> <span id="tape-surv-note"></span>
+  </p>
+
+</div><!-- /view-tape -->
 
 <script>
 const C = {
@@ -464,7 +578,18 @@ function panelDomains() {
   return domains;   // index 0 = top panel
 }
 
+function chartError(msg) {
+  document.getElementById('chart').innerHTML =
+    `<div class="chart-error">${msg}</div>`;
+}
+
 function renderChart() {
+  // The "loading…" placeholder lives inside #chart until Plotly draws over it.
+  // If the CDN failed to load, say so honestly instead of looking stuck.
+  if (typeof Plotly === 'undefined') {
+    chartError('Chart library (Plotly) failed to load — check your connection, then reload.<br>The data itself is fine; only the chart needs the CDN.');
+    return;
+  }
   const dates = dash.dates, s = dash.series;
   const dom = panelDomains();
   const line = (color, w=1.3) => ({color, width: w});
@@ -563,10 +688,14 @@ function renderChart() {
     })),
   };
 
-  Plotly.newPlot('chart', traces, layout, {
-    displaylogo: false, responsive: true,
-    modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
-  });
+  try {
+    Plotly.newPlot('chart', traces, layout, {
+      displaylogo: false, responsive: true,
+      modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+    });
+  } catch (e) {
+    chartError('Could not render the chart: ' + e.message);
+  }
 }
 
 function hline(y, yref) {
@@ -644,6 +773,243 @@ async function pollProgress() {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Breadth Tape (Stockbee-style Market Monitor) — the second tab
+// ---------------------------------------------------------------------------
+
+const TAPE_FMT = {
+  int:   v => Math.round(v).toLocaleString(),
+  ratio: v => v.toFixed(2),
+  pct:   v => v.toFixed(1) + '%',
+  price: v => v.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}),
+  date:  v => {
+    const [y, m, d] = v.split('-');
+    return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m - 1]
+           + ' ' + (+d) + " '" + y.slice(2);
+  },
+};
+
+const TAPE_COLS = [
+  {key:'date',        label:'Date',              grp:'date', pol:'none',  fmt:'date'},
+  {key:'up4',         label:'Stocks\nUp 4%+\nToday',   grp:'pri', pol:'bull',  fmt:'int'},
+  {key:'down4',       label:'Stocks\nDown 4%+\nToday', grp:'pri', pol:'bear',  fmt:'int'},
+  {key:'ratio5',      label:'5 Day\nRatio',      grp:'pri', pol:'ratio', fmt:'ratio'},
+  {key:'ratio10',     label:'10 Day\nRatio',     grp:'pri', pol:'ratio', fmt:'ratio'},
+  {key:'up25q',       label:'Up 25%+\nQuarter',  grp:'pri', pol:'bull',  fmt:'int'},
+  {key:'down25q',     label:'Down 25%+\nQuarter',grp:'pri', pol:'bear',  fmt:'int'},
+  {key:'up25m',       label:'Up 25%+\nMonth',    grp:'sec', pol:'bull',  fmt:'int'},
+  {key:'down25m',     label:'Down 25%+\nMonth',  grp:'sec', pol:'bear',  fmt:'int'},
+  {key:'up50m',       label:'Up 50%+\nMonth',    grp:'sec', pol:'bull',  fmt:'int'},
+  {key:'down50m',     label:'Down 50%+\nMonth',  grp:'sec', pol:'bear',  fmt:'int'},
+  {key:'up13_34',     label:'Up 13%+\n34 Days',  grp:'sec', pol:'bull',  fmt:'int'},
+  {key:'down13_34',   label:'Down 13%+\n34 Days',grp:'sec', pol:'bear',  fmt:'int'},
+  {key:'atr_ext',     label:'10x ATR\nExt.',     grp:'atr', pol:'bear',  fmt:'int'},
+  {key:'pct_above_50',label:'>50dma',            grp:'ma',  pol:'pct50', fmt:'pct'},
+  {key:'n_symbols',   label:'Stock\nUniverse',   grp:'uni', pol:'none',  fmt:'int'},
+  {key:'sp',          label:'S&P',               grp:'sp',  pol:'none',  fmt:'price'},
+];
+
+const TAPE_G = [26,157,107], TAPE_R = [209,69,59];
+
+function tapeHeat(v, col, stat) {
+  if (v == null || col.pol === 'none') return null;
+  let inten = 0, rgb = null;
+  if (col.pol === 'bull' || col.pol === 'bear') {
+    inten = stat.max > stat.min ? (v - stat.min) / (stat.max - stat.min) : 0;
+    rgb = col.pol === 'bull' ? TAPE_G : TAPE_R;
+  } else if (col.pol === 'ratio') {
+    if (v >= 1) { inten = Math.min(1, (v - 1) / 1.0); rgb = TAPE_G; }
+    else        { inten = Math.min(1, (1 - v) / 0.6); rgb = TAPE_R; }
+  } else if (col.pol === 'pct50') {
+    if (v >= 50) { inten = Math.min(1, (v - 50) / 30); rgb = TAPE_G; }
+    else         { inten = Math.min(1, (50 - v) / 30); rgb = TAPE_R; }
+  }
+  if (!rgb) return null;
+  const a = 0.10 + 0.72 * inten;
+  return {bg: `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${a.toFixed(3)})`,
+          fg: a > 0.46 ? '#fff' : 'var(--ink)'};
+}
+
+function buildTapeHead() {
+  const grpClass = {pri:'g-yellow', sec:'g-green', atr:'g-purple', ma:'g-blue', uni:'g-yellow', sp:'g-yellow'};
+  const colClass = {pri:'c-yellow', sec:'c-green'};
+  const pri = TAPE_COLS.filter(c => c.grp === 'pri');
+  const sec = TAPE_COLS.filter(c => c.grp === 'sec');
+
+  let grp = '<tr class="grp"><th rowspan="2" class="g-date">Date</th>';
+  grp += `<th colspan="${pri.length}" class="g-yellow">Primary Breadth Indicators</th>`;
+  grp += `<th colspan="${sec.length}" class="g-green">Secondary Breadth Indicators</th>`;
+  for (const c of TAPE_COLS.filter(c => ['atr','ma','uni','sp'].includes(c.grp)))
+    grp += `<th rowspan="2" class="${grpClass[c.grp]}">${c.label.replace(/\n/g,' ')}</th>`;
+  grp += '</tr>';
+
+  let cols = '<tr class="cols">';
+  for (const c of [...pri, ...sec]) cols += `<th class="${colClass[c.grp]}">${c.label}</th>`;
+  cols += '</tr>';
+
+  document.getElementById('tape-thead').innerHTML = grp + cols;
+}
+
+function tapeColStats(rows) {
+  const stats = {};
+  for (const c of TAPE_COLS) {
+    if (c.pol !== 'bull' && c.pol !== 'bear') continue;
+    let mn = Infinity, mx = -Infinity;
+    for (const r of rows) {
+      const v = r[c.key];
+      if (v == null) continue;
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+    stats[c.key] = {min: mn, max: mx};
+  }
+  return stats;
+}
+
+function renderTape(data) {
+  document.getElementById('tape-surv-note').textContent = data.note || '';
+  const loading = document.getElementById('tape-loading');
+  const table   = document.getElementById('tape-table');
+  const empty   = document.getElementById('tape-empty');
+
+  if (data.empty || !data.rows || !data.rows.length) {
+    loading.style.display = 'none';
+    table.style.display = 'none';
+    document.getElementById('tape-gauges').innerHTML = '';
+    document.getElementById('tape-empty-text').textContent =
+      `No local breadth data for ${data.name}. Run a sync from the Dashboard tab.`;
+    empty.classList.add('show');
+    document.getElementById('tape-status').textContent = `${data.name} · no data`;
+    return;
+  }
+  empty.classList.remove('show');
+
+  const g = data.gauges || {};
+  const bar = (lL, lN, lP, rL, rN, rP, lc, rc) => `
+    <div class="gauge">
+      <div class="gauge-labels">
+        <span style="color:${lc}"><b>${lL}</b> ${lP == null ? '' : lP + '%'} (${(lN||0).toLocaleString()})</span>
+        <span style="color:${rc}"><b>${rL}</b> ${rP == null ? '' : rP + '%'} (${(rN||0).toLocaleString()})</span>
+      </div>
+      <div class="gauge-bar">
+        <span style="width:${lP||0}%;background:${lc}"></span>
+        <span style="width:${rP||0}%;background:${rc}"></span>
+      </div>
+    </div>`;
+  document.getElementById('tape-gauges').innerHTML =
+    bar('Advancing', g.advances, g.adv_pct, 'Declining', g.declines, g.dec_pct, C.green, C.red) +
+    bar('New High', g.new_highs, g.nh_pct, 'New Low', g.new_lows, g.nl_pct, C.blue, '#e08a1e');
+
+  const stats = tapeColStats(data.rows);
+  let html = '';
+  for (const r of data.rows) {
+    html += '<tr>';
+    for (const c of TAPE_COLS) {
+      const v = r[c.key];
+      const txt = (v == null) ? '·' : TAPE_FMT[c.fmt](v);
+      if (c.key === 'date') { html += `<td class="date">${txt}</td>`; continue; }
+      const h = tapeHeat(v, c, stats[c.key]);
+      if (h) html += `<td style="background:${h.bg};color:${h.fg}">${txt}</td>`;
+      else   html += `<td class="${c.pol === 'none' ? 'neutral' : ''}">${txt}</td>`;
+    }
+    html += '</tr>';
+  }
+  document.getElementById('tape-tbody').innerHTML = html;
+  loading.style.display = 'none';
+  table.style.display = 'table';
+
+  const st = data.status || {};
+  document.getElementById('tape-status').textContent =
+    `${data.name} · ${st.members ? st.members.toLocaleString() + ' symbols' : ''} · as of ${data.as_of} · updated ${data.updated || ''}`;
+}
+
+let tapeUniverse = 'all', tapeRows = 30, tapeLoaded = false;
+
+async function loadTape() {
+  document.getElementById('tape-loading').style.display = 'block';
+  document.getElementById('tape-table').style.display = 'none';
+  document.getElementById('tape-empty').classList.remove('show');
+  try {
+    const r = await fetch(`/api/breadth/tape?universe=${tapeUniverse}&rows=${tapeRows}`);
+    renderTape(await r.json());
+    tapeLoaded = true;
+  } catch (e) {
+    document.getElementById('tape-loading').textContent = 'failed to load: ' + e;
+  }
+}
+
+function flashBtn(btn, msg) {
+  const old = btn.textContent;
+  btn.textContent = msg;
+  setTimeout(() => { btn.textContent = old; }, 1600);
+}
+
+// Copy the tape (gauges + table) to the clipboard as a PNG. Safari keeps the
+// user-gesture only if ClipboardItem is given a Promise that resolves to the
+// blob, so the html2canvas render happens *inside* that promise.
+async function copyTapeImage() {
+  const btn  = document.getElementById('tape-copy-btn');
+  const wrap = document.getElementById('tape-wrap');
+  const node = document.getElementById('tape-capture');
+  if (typeof html2canvas === 'undefined') { flashBtn(btn, 'lib not loaded'); return; }
+  flashBtn(btn, 'Rendering…');
+  const prevOverflow = wrap.style.overflow;
+  wrap.style.overflow = 'visible';   // let the full-width table into the canvas
+
+  const blobPromise = html2canvas(node, {backgroundColor: '#ffffff', scale: 2, useCORS: true})
+    .then(canvas => new Promise(res => canvas.toBlob(res, 'image/png')))
+    .finally(() => { wrap.style.overflow = prevOverflow; });
+
+  try {
+    await navigator.clipboard.write([new ClipboardItem({'image/png': blobPromise})]);
+    flashBtn(btn, 'Copied! ✓');
+  } catch (e) {
+    // Fallback (clipboard image not permitted): download the PNG instead.
+    try {
+      const blob = await blobPromise;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `breadth-tape-${tapeUniverse}.png`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      flashBtn(btn, 'Downloaded ↓');
+    } catch (e2) {
+      flashBtn(btn, 'Failed');
+    }
+  }
+}
+
+// ---- view tabs ----
+function switchView(view) {
+  const isTape = view === 'tape';
+  document.getElementById('view-dashboard').style.display = isTape ? 'none' : '';
+  document.getElementById('view-tape').style.display = isTape ? '' : 'none';
+  document.getElementById('controls-dashboard').style.display = isTape ? 'none' : '';
+  document.getElementById('controls-tape').style.display = isTape ? '' : 'none';
+  document.querySelectorAll('.tabs button').forEach(b =>
+    b.classList.toggle('active', b.dataset.view === view));
+  if (isTape && !tapeLoaded) loadTape();
+}
+
+document.querySelector('.tabs').addEventListener('click', ev => {
+  const b = ev.target.closest('button');
+  if (b) switchView(b.dataset.view);
+});
+
+function wireTapeToggle(id, attr, cb) {
+  document.getElementById(id).addEventListener('click', ev => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    [...b.parentNode.children].forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    cb(b.dataset[attr]);
+  });
+}
+wireTapeToggle('tape-universe-toggle', 'uni',  v => { tapeUniverse = v;        loadTape(); });
+wireTapeToggle('tape-rows-toggle',     'rows', v => { tapeRows = parseInt(v);  loadTape(); });
+document.getElementById('tape-copy-btn').addEventListener('click', copyTapeImage);
+document.getElementById('tape-empty-sync').addEventListener('click', () => switchView('dashboard'));
 
 // ---------------------------------------------------------------------------
 

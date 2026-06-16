@@ -45,9 +45,18 @@ _EXTENDED_ETFS = DEFAULT_TICKERS + [
     "JETS", "ITA", "XAR", "TAN", "ICLN", "LIT", "URA", "PAVE", "CIBR", "BOTZ",
 ]
 
+# Near-duplicate, same-industry ETFs whose co-presence quietly doubles a bet (the
+# 40-ETF run's top contribution was KRE+KBE = the *same* banks theme). The
+# de-correlated set keeps one representative per industry so the backtest can't
+# lean on a doubled position: drop SOXX (≈SMH semis), IBB (≈XBI biotech), SKYY
+# (≈IGV software/cloud), XHB (≈ITB homebuilders), KBE (≈KRE banks), XAR (≈ITA A&D).
+_DEDUP_DROP = {"SOXX", "IBB", "SKYY", "XHB", "KBE", "XAR"}
+_DEDUP_ETFS = [t for t in _EXTENDED_ETFS if t not in _DEDUP_DROP]
+
 UNIVERSES = {
-    "sectors": {"label": "11 SPDR sectors",          "tickers": DEFAULT_TICKERS},
-    "etfs":    {"label": "Sector + industry ETFs",    "tickers": _EXTENDED_ETFS},
+    "sectors":    {"label": "11 SPDR sectors",       "tickers": DEFAULT_TICKERS},
+    "etfs":       {"label": "Sector + industry ETFs", "tickers": _EXTENDED_ETFS},
+    "etfs_dedup": {"label": "De-correlated ETFs",     "tickers": _DEDUP_ETFS},
 }
 DEFAULT_UNIVERSE = "sectors"
 
@@ -65,12 +74,6 @@ def _resolve_universe(name):
 BENCHMARKS = {"SPY": "SPY (cap-weight)", "RSP": "RSP (equal-weight)"}
 DEFAULT_BENCHMARK = "SPY"
 
-# Rotation regime: equal-weight (RSP) vs cap-weight (SPY). When RSP/SPY is above
-# its own trend, breadth is broadening = rotation is live ("on"); below = a
-# concentration regime where a rotation signal structurally can't win ("off").
-ROTATION_MA = 50            # daily EMA span for the RSP/SPY trend (close_df is daily)
-
-
 def _bench(close, idx, symbol):
     """(series, array) for a benchmark column, reindexed + ffilled to idx."""
     s = close[symbol] if symbol in close.columns else pd.Series(dtype=float)
@@ -79,22 +82,28 @@ def _bench(close, idx, symbol):
     return s, arr
 
 
-def _rotation_regime(close, idx, span=ROTATION_MA):
-    """Per-date "on"/"off" array from the RSP/SPY ratio vs its EMA. None (no split)
-    if RSP wasn't downloaded — fail-soft."""
+def _rotation_series(close, idx):
+    """Per-date rotation regime Series ('on'/'off') aligned to idx — equal-weight
+    (RSP) vs cap-weight (SPY) above/below its trend. Reuses `signal._rotation_label`
+    (one definition, trailing EMA → no-lookahead) so the live gate and the backtest
+    agree. None (no split / no gate) if RSP wasn't downloaded — fail-soft."""
     if "RSP" not in close.columns or BENCHMARK not in close.columns:
         return None
-    ratio = (close["RSP"] / close[BENCHMARK]).reindex(idx).ffill()
-    if ratio.dropna().empty:
+    lab = signal._rotation_label(close["RSP"], close[BENCHMARK])
+    if lab.empty:
         return None
-    ma = ratio.ewm(span=span, adjust=False).mean()
-    return np.where((ratio > ma).to_numpy(), "on", "off")
+    with pd.option_context("future.no_silent_downcasting", True):
+        return lab.reindex(idx).ffill()
 TRADE_CAP    = 400
-# The two extension warnings are first-class calls (own event-study rows). w5
-# extended is an exit-the-long signal; w3 extended is "hold but tighten".
+# The two extension warnings are first-class calls (own event-study rows). Both
+# are now "hold but tighten", NOT exits: the event study showed ⚠️ w5 extended has
+# strongly POSITIVE forward excess (+1.3% at +10d) — it's continuation, not
+# exhaustion — so exiting a long on it was selling winners early. It stays a
+# cautionary late-cycle badge (schwab TRIM) but no longer forces a trade-sim exit
+# nor counts on the bearish side of the walk-forward separation objective.
 CALL_ORDER   = ["ROTATE IN", "ROTATE OUT", "⚠️ w5 extended", "⚠️ w3 extended",
                 "HOLD", "WATCH", "AVOID"]
-EXIT_CALLS   = ("ROTATE OUT", "AVOID", "⚠️ w5 extended")
+EXIT_CALLS   = ("ROTATE OUT", "AVOID")
 
 DEFAULT_EXIT = {
     "model":      "signal",   # signal | hold | atr
@@ -265,10 +274,10 @@ def _confidence_study(recs, horizon=SEP_HORIZON):
 
 
 def _separation(recs, lo, hi, horizon=SEP_HORIZON, min_n=3):
-    """Mean excess of ROTATE IN minus mean excess of the bearish exit calls
-    (ROTATE OUT ∪ ⚠️ w5 extended) at `horizon`, over onsets in (lo, hi]. NaN if
-    either side is too thin to trust."""
-    out_calls = ("ROTATE OUT", "⚠️ w5 extended")
+    """Mean excess of ROTATE IN minus mean excess of ROTATE OUT at `horizon`, over
+    onsets in (lo, hi]. NaN if either side is too thin to trust. (⚠️ w5 extended is
+    no longer on the bearish side — it proved to be continuation, not exhaustion.)"""
+    out_calls = ("ROTATE OUT",)
     ins  = [r["excess"][horizon] for r in recs
             if r["call"] == "ROTATE IN"     and lo < r["date"] <= hi and horizon in r["excess"]]
     outs = [r["excess"][horizon] for r in recs
@@ -385,6 +394,31 @@ def _trade_stats(trades):
     }
 
 
+def _symbol_contributions(trades):
+    """Per-symbol trade aggregates → is the curve broad or carried by a few names?
+    `total_return` is the gross (simple) sum of the symbol's trade returns — a
+    first-order contribution read (the equity equal-weights co-held positions, so
+    it's not an exact P&L split, but it answers 'where did the return come from')."""
+    by_sym = defaultdict(list)
+    for t in trades:
+        if t.get("return_pct") is not None:
+            by_sym[t["symbol"]].append(t["return_pct"])
+    rows = []
+    for sym, rets in by_sym.items():
+        arr = np.array(rets, dtype=float)
+        rows.append({"symbol": sym, "n_trades": int(arr.size),
+                     "total_return": _num(arr.sum()), "avg_return": _num(arr.mean()),
+                     "win_rate": _num(100.0 * (arr > 0).mean()),
+                     "best": _num(arr.max()), "worst": _num(arr.min())})
+    rows.sort(key=lambda r: r["total_return"] if r["total_return"] is not None else 0,
+              reverse=True)
+    total = sum(r["total_return"] for r in rows if r["total_return"] is not None)
+    share = lambda k: (_num(100.0 * sum(r["total_return"] for r in rows[:k]) / total, 1)
+                       if total else None)
+    return {"rows": rows, "n_symbols": len(rows), "total_return_sum": _num(total),
+            "top3_share": share(3), "top5_share": share(5)}
+
+
 def _equity_curve(trades, close_df, spy_close, idx):
     if not trades:
         return None
@@ -473,9 +507,12 @@ def run_backtest(interval="1d", tail=6, exit_cfg=None, params=None,
     bench_close, bench_arr = _bench(close, idx, bench_sym)
     if bench_close.empty:                         # RSP missing → fall back to SPY
         bench_sym, bench_close, bench_arr = BENCHMARK, spy_close, spy_arr
-    regime = _rotation_regime(close, idx)
+    rot_series = _rotation_series(close, idx)
+    regime = rot_series.to_numpy() if rot_series is not None else None
 
-    calls = signal.replay_calls(series, tail, params=params)
+    # rotation gate applies in the backtest too (no-lookahead): entries are
+    # suppressed in a concentration regime, exactly as in the live engine.
+    calls = signal.replay_calls(series, tail, params=params, rotation=rot_series)
 
     recs   = _event_records(calls, close, bench_arr, idx, lag, regime)
     events = _event_study(recs)
@@ -489,6 +526,7 @@ def run_backtest(interval="1d", tail=6, exit_cfg=None, params=None,
 
     stats  = _trade_stats(trades)
     equity = _equity_curve(trades, close, bench_close, idx)
+    contributions = _symbol_contributions(trades)
 
     rets = [t["return_pct"] for t in trades if t["return_pct"] is not None]
     hist = None
@@ -512,6 +550,7 @@ def run_backtest(interval="1d", tail=6, exit_cfg=None, params=None,
         "event_study":    events,
         "confidence":     confidence,
         "regime_study":   regime_study,
+        "contributions":  contributions,
         "stats":          stats,
         "equity":         equity,
         "histogram":      hist,
@@ -558,6 +597,7 @@ def walk_forward_search(interval="1d", tail=6, exit_cfg=None, folds=4,
     _bc, bench_arr = _bench(close, idx, bench_sym)
     if _bc.empty:
         bench_sym, bench_arr = BENCHMARK, spy_arr
+    rot_series = _rotation_series(close, idx)
 
     keys  = list(_GRID)
     combos = [dict(zip(keys, vals)) for vals in itertools.product(*(_GRID[k] for k in keys))]
@@ -572,7 +612,8 @@ def walk_forward_search(interval="1d", tail=6, exit_cfg=None, folds=4,
             s, _, _ = signal.compute_series(tickers, BENCHMARK, interval,
                                             params={"ZIGZAG_K": sk})
             series_cache[sk] = s
-        calls = signal.replay_calls(series_cache[sk], tail, params=combo)
+        calls = signal.replay_calls(series_cache[sk], tail, params=combo,
+                                    rotation=rot_series)
         recs  = _event_records(calls, close, bench_arr, idx, lag)
         per_combo.append((combo, recs))
 

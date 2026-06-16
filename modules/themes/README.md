@@ -2,6 +2,10 @@
 
 [← Back to main README](../../README.md)
 
+<p align="center">
+  <img src="../../assets/screenshots/themes.png" alt="Theme tracker — theme RRG, ranking, and constituents" width="800"/>
+</p>
+
 Track **custom investment themes** the same way the [Rankings](../rankings/README.md) and [RRG](../rrg/README.md) modules track sectors. A theme is a hand-picked basket of stocks (e.g. *AI Biotech* = RXRX, SDGR, TEM, …); the tracker turns each basket into an equal-weight index, scores it 0-99 vs SPY, plots all the themes on a rotation chart, and lets you drill into the underlying names — and you edit the baskets right in the page.
 
 Open at **http://localhost:8000/themes.html**. Needs only Yahoo Finance (no key) — it's self-contained.
@@ -22,7 +26,7 @@ A sortable table scoring each theme **0-99** by relative strength (the same pool
 
 ### Constituents
 
-Pick a theme and see its stocks ranked by relative strength vs SPY (price, change%, RS 1-month and 3-month) — so you can see *which names* are driving a hot theme or dragging a cold one.
+Pick a theme and see its stocks ranked by relative strength vs SPY (price, change%, RS 1-month and 3-month) — so you can see *which names* are driving a hot theme or dragging a cold one. Each name also shows its historical **flag win-rate** + a volume-exhaustion badge (read from the Screener's precomputed table; off-universe tickers simply leave the cell blank).
 
 ### Editor
 

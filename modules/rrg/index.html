@@ -524,6 +524,7 @@
         <select id="bt-universe" title="Ticker universe">
           <option value="sectors">11 SPDR sectors</option>
           <option value="etfs">Sector + industry ETFs (~40)</option>
+          <option value="etfs_dedup">De-correlated ETFs (~34)</option>
         </select>
         <select id="bt-benchmark" title="Benchmark (yardstick for excess + equity)">
           <option value="SPY">vs SPY (cap-weight)</option>
@@ -1249,6 +1250,23 @@ function renderBacktest(d) {
     html += `<div class="bt-note">If higher conviction → higher excess (monotone), the confluence score is doing real work. ${cf.monotone_hint != null ? 'Top−bottom spread: ' + fmtPct(cf.monotone_hint) + '.' : ''} Small sample — read as direction, not precision.</div>`;
   }
 
+  // Per-symbol contribution — is the curve broad or carried by a few names?
+  if (d.contributions && d.contributions.rows && d.contributions.rows.length) {
+    const co = d.contributions;
+    html += '<div class="bt-section-title">Contribution by symbol — is the return broad or concentrated?</div>';
+    html += '<table class="bt-table"><thead><tr><th>Symbol</th><th>Trades</th><th>Σ return</th><th>Avg</th><th>Win</th><th>Best</th><th>Worst</th></tr></thead><tbody>';
+    co.rows.forEach(r => {
+      html += `<tr><td>${r.symbol}</td><td>${r.n_trades}</td>`
+            + `<td class="${signCls(r.total_return)}">${fmtPct(r.total_return)}</td>`
+            + `<td class="${signCls(r.avg_return)}">${fmtPct(r.avg_return)}</td>`
+            + `<td>${r.win_rate == null ? '—' : Math.round(r.win_rate) + '%'}</td>`
+            + `<td class="${signCls(r.best)}">${fmtPct(r.best)}</td>`
+            + `<td class="${signCls(r.worst)}">${fmtPct(r.worst)}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    html += `<div class="bt-note">${co.n_symbols} symbols traded. <b>Top 3 = ${co.top3_share == null ? '—' : co.top3_share + '%'}</b> and top 5 = ${co.top5_share == null ? '—' : co.top5_share + '%'} of the gross summed return — a high share means the curve leans on a few names (and watch for several correlated ETFs of the same theme). Σ return is the simple sum of a symbol's trade returns, not an exact P&L split.</div>`;
+  }
+
   if (d.walk_forward) {
     const w = d.walk_forward;
     html += '<div class="bt-section-title">Walk-forward — recommended gate params</div>';
@@ -1311,6 +1329,14 @@ function backtestMarkdown(d) {
     m += `|---|---|---|${HZ.map(() => '---').join('|')}|\n`;
     d.regime_study.rows.forEach(r => {
       m += `| ${r.call} | ${r.regime} | ${r.n_onsets} | ${HZ.map(h => r.horizons[h] ? fmtPct(r.horizons[h].excess) : '—').join(' | ')} |\n`;
+    });
+  }
+  if (d.contributions && d.contributions.rows && d.contributions.rows.length) {
+    const co = d.contributions;
+    m += `\n## Contribution by symbol (${co.n_symbols} traded · top3 ${co.top3_share}% · top5 ${co.top5_share}% of gross)\n\n`;
+    m += `| Symbol | Trades | Σ return | Avg | Win |\n|---|---|---|---|---|\n`;
+    co.rows.slice(0, 10).forEach(r => {
+      m += `| ${r.symbol} | ${r.n_trades} | ${fmtPct(r.total_return)} | ${fmtPct(r.avg_return)} | ${r.win_rate == null ? '—' : Math.round(r.win_rate) + '%'} |\n`;
     });
   }
   if (d.walk_forward) {

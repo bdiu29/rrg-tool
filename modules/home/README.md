@@ -2,6 +2,10 @@
 
 [← Back to main README](../../README.md)
 
+<p align="center">
+  <img src="../../assets/screenshots/home.png" alt="Module hub homepage with live status badges" width="800"/>
+</p>
+
 The landing page at **http://localhost:8000/**. A simple hub of cards, one per module, each with a **live status badge** so you can see the state of everything at a glance before clicking in.
 
 Each badge loads independently and **fails soft** — if one module's API is down or unconfigured, its badge reads "no data" / "unavailable" and the rest of the page still works.

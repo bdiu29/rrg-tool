@@ -43,6 +43,31 @@ The `interpret()` step maps a short-term extreme *through* the regime — an ove
 
 ---
 
+## Breadth Tape — Market Monitor
+
+A second **tab** on the breadth page (toggle "Dashboard ⟷ Breadth Tape" at the top of
+**http://localhost:8000/breadth.html**) that reproduces the Stockbee-style "Market Monitor": a
+dense daily table, newest day on top, of raw cross-sectional counts with each cell green/red
+heat-colored, plus Advancing/Declining and New-High/New-Low gauge bars and a **Copy as image**
+button (renders the tape to a PNG and writes it to the clipboard; downloads as a fallback).
+
+<p align="center">
+  <img src="../../assets/screenshots/breadth-tape.png" alt="Breadth Tape — Stockbee-style Market Monitor daily breadth table" width="800"/>
+</p>
+
+Columns: **Up/Down 4%+ Today**, **5/10 Day Ratio** (Σ up4% / Σ down4%), **Up/Down 25%+ Quarter**
+(65d), **Up/Down 25%+ & 50%+ Month** (20d), **Up/Down 13%+ 34 Days**, **10× ATR Ext.** (close
+≥10×ATR(14) above its SMA50), **>50dma** (% above the 50-day SMA), **Stock Universe** (eligible
+count), and **S&P** (^GSPC close). Same eligible-denominator discipline as the dashboard
+aggregates.
+
+Scope toggle: **All** (NYSE ∪ Nasdaq, default — broad enough for hundreds-of-stocks counts;
+S&P 500 alone is single-digit) / S&P 500 / NYSE / Nasdaq. Computed on demand from stored bars
+(`indicators.market_monitor`), memoized until the next sync. `^GSPC` is fetched lazily via
+yfinance and cached in `bars`. Endpoint: `GET /api/breadth/tape?universe=&rows=`.
+
+---
+
 ## Universes
 
 Swappable at runtime via the buttons in the header: **S&P 500** (Wikipedia constituents), **NYSE** and **Nasdaq** (nasdaqtrader.com listings, common stock only — warrants/units/preferreds filtered by name). Universes are defined in `universes.json` — adding Russell 2000 or S&P 600 is a config entry (a generic CSV fetcher is included), no code changes.
@@ -88,6 +113,7 @@ Prints the current regime with reasons, short-term extremes interpreted *through
 | `store.py` | SQLite store (bars, members, sync_state, computed series) |
 | `universes.py` / `universes.json` | constituent fetchers + swappable config |
 | `backfill.py` | resumable background sync job |
-| `indicators.py` | pure pandas breadth math (unit-tested in `tests/`) |
+| `indicators.py` | pure pandas breadth math incl. `market_monitor` (the Breadth Tape) — unit-tested in `tests/` |
 | `regime.py` | regime state + divergence detection + interpretation |
 | `cli.py` | daily summary printout |
+| `breadth.html` | dashboard (Plotly) + Breadth Tape tab (heat-colored table) |

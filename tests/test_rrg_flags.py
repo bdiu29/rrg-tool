@@ -171,6 +171,29 @@ class TestConvictionFlagFactor(unittest.TestCase):
         self.assertAlmostEqual(self._score(vol_exh="seller"), 11.2, places=1)
         self.assertAlmostEqual(self._score(vol_exh="buyer"), -11.2, places=1)
 
+    def test_rotation_gate(self):
+        # concentration regime suppresses conviction; broadening supports it
+        self.assertAlmostEqual(self._score(rotation="off"), -signal.W_ROTATION_OFF, places=1)
+        self.assertAlmostEqual(self._score(rotation="on"), signal.W_ROTATION_ON, places=1)
+        self.assertEqual(self._score(rotation=None), 0.0)
+
+    def test_rotation_gate_demotes_an_entry(self):
+        # a setup that clears T_IN on its own falls below it once rotation is off
+        ws_on  = _ws(flag=1.0, flag_win_bull=0.70, flag_n_bull=20, vol_exh="seller")
+        base   = signal._conviction(ws_on)[0]
+        gated  = signal._conviction(dict(ws_on, rotation="off"))[0]
+        self.assertAlmostEqual(base - gated, signal.W_ROTATION_OFF, places=1)
+
+
+class TestRotationLabel(unittest.TestCase):
+    def test_on_when_equal_weight_leads(self):
+        idx = pd.date_range("2024-01-01", periods=80)
+        spy = pd.Series(np.full(80, 100.0), index=idx)
+        rising  = pd.Series(np.linspace(100, 120, 80), index=idx)   # RSP/SPY rising
+        falling = pd.Series(np.linspace(120, 100, 80), index=idx)   # RSP/SPY falling
+        self.assertEqual(signal._rotation_label(rising, spy).iloc[-1], "on")
+        self.assertEqual(signal._rotation_label(falling, spy).iloc[-1], "off")
+
 
 if __name__ == "__main__":
     unittest.main()

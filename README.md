@@ -16,11 +16,11 @@ Each module has its own README with the full nuts-and-bolts deep dive. See [CHAN
 |---|---|---|
 | **Home** | Hub page linking every module, with live status badges | [modules/home](modules/home/README.md) |
 | **RRG** | Interactive Relative Rotation Graph for sector ETFs — rotation calls per sector | [modules/rrg](modules/rrg/README.md) |
-| **Breadth** | Market breadth tracker: McClellan, A-D lines, % above MAs / short-term EMA thrust, regime & divergences across swappable universes (S&P 500 / NYSE / Nasdaq) | [modules/breadth](modules/breadth/README.md) |
+| **Breadth** | Market breadth tracker: McClellan, A-D lines, % above MAs / short-term EMA thrust, regime & divergences across swappable universes (S&P 500 / NYSE / Nasdaq), plus a **Breadth Tape** tab — a Stockbee-style Market Monitor (daily ±4%/±25%/±50% counts, 5/10-day ratios, ATR-extension, >50dma) with copy-as-image | [modules/breadth](modules/breadth/README.md) |
 | **Schwab** | Account positions enriched with daily sector rotation signals (BUY / HOLD / SELL) | [modules/schwab](modules/schwab/README.md) |
-| **Screener** | TradingView-style screener over the whole market (incl. EMA & golden-pocket filters) + watchlists + intraday pump/dump alerts (Discord / email) + a **strategy backtester** | [modules/screener](modules/screener/README.md) |
-| **Rankings** | Relative-strength leaderboard for the 11 SPDR sectors — 0-99 percentile ranks vs SPY, daily/weekly rank movers, and the strongest stocks (or the ETF's real top holdings) per sector | [modules/rankings](modules/rankings/README.md) |
-| **Themes** | Editable **theme baskets** (optics, data centers, software, defense, space, AI biotech) turned into equal-weight indices, ranked 0-99 vs SPY with a theme RRG rotation chart, movers, and constituent drill-down | [modules/themes](modules/themes/README.md) |
+| **Screener** | TradingView-style screener over the whole market (incl. EMA, golden-pocket, **flag & volume-exhaustion** filters) + watchlists + intraday pump/dump alerts (Discord / email) + a **strategy backtester** | [modules/screener](modules/screener/README.md) |
+| **Rankings** | Relative-strength leaderboard for the 11 SPDR sectors — 0-99 percentile ranks vs SPY, daily/weekly rank movers, and the strongest stocks (or the ETF's real top holdings) per sector, each with its historical **flag win-rate** | [modules/rankings](modules/rankings/README.md) |
+| **Themes** | Editable **theme baskets** (optics, data centers, software, defense, space, AI biotech) turned into equal-weight indices, ranked 0-99 vs SPY with a theme RRG rotation chart, movers, and constituent drill-down (with per-name flag win-rates) | [modules/themes](modules/themes/README.md) |
 
 Every page shares a light **white/navy** theme; the RRG keeps its original dark chart.
 
@@ -108,13 +108,45 @@ Then open **http://localhost:8000**. Press `Ctrl+C` in the terminal to stop.
 |---|---|
 | Home — Module Hub | http://localhost:8000/ |
 | RRG — Sector Rotation | http://localhost:8000/rrg.html |
-| Breadth — Market Breadth | http://localhost:8000/breadth.html |
+| Breadth — Market Breadth (+ Breadth Tape tab) | http://localhost:8000/breadth.html |
 | Schwab — Account Positions | http://localhost:8000/schwab.html |
 | Screener — Stock Screener | http://localhost:8000/screener.html |
 | Rankings — Sector Leaderboard | http://localhost:8000/rankings.html |
 | Themes — Theme Tracker | http://localhost:8000/themes.html |
 
 > **Data note:** the core data comes from Yahoo Finance via `yfinance` (free, no key, but unofficial — the occasional hiccup is normal; just reload) and, where you've connected Schwab, the Schwab Market Data API. Everything is educational only — confirm with price trend, not these tools alone.
+
+---
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><a href="http://localhost:8000/"><img src="assets/screenshots/home.png" alt="Home hub" width="100%"/></a><br/><sub><b>Home</b> — module hub with live status badges</sub></td>
+    <td width="50%"><a href="http://localhost:8000/rrg.html"><img src="assets/screenshots/rrg.png" alt="RRG sector rotation" width="100%"/></a><br/><sub><b>RRG</b> — sector rotation + conviction calls</sub></td>
+  </tr>
+  <tr>
+    <td><a href="http://localhost:8000/breadth.html"><img src="assets/screenshots/breadth.png" alt="Market breadth dashboard" width="100%"/></a><br/><sub><b>Breadth</b> — regime, divergences, breadth panels</sub></td>
+    <td><a href="http://localhost:8000/breadth.html"><img src="assets/screenshots/breadth-tape.png" alt="Breadth Tape — Market Monitor" width="100%"/></a><br/><sub><b>Breadth Tape</b> — Stockbee-style Market Monitor</sub></td>
+  </tr>
+  <tr>
+    <td><a href="http://localhost:8000/screener.html"><img src="assets/screenshots/screener.png" alt="Stock screener" width="100%"/></a><br/><sub><b>Screener</b> — filters, watchlists, alerts</sub></td>
+    <td><a href="http://localhost:8000/rankings.html"><img src="assets/screenshots/rankings.png" alt="Sector leaderboard" width="100%"/></a><br/><sub><b>Rankings</b> — sector RS leaderboard + movers</sub></td>
+  </tr>
+  <tr>
+    <td><a href="http://localhost:8000/themes.html"><img src="assets/screenshots/themes.png" alt="Theme tracker" width="100%"/></a><br/><sub><b>Themes</b> — theme baskets, RRG + constituents</sub></td>
+    <td></td>
+  </tr>
+</table>
+
+Screenshots live in [`assets/screenshots/`](assets/screenshots/). To (re)generate them on a Mac — no extra dependencies, uses Safari + the built-in `screencapture`:
+
+```bash
+python3 app.py                          # in one terminal
+bash scripts/capture_screenshots.sh     # in another
+```
+
+First run prompts for Screen Recording permission for your terminal. To also capture the **Breadth Tape** tab, enable Safari → Settings → Advanced → *Show Develop menu*, then Develop → *Allow JavaScript from Apple Events* (it degrades gracefully without it).
 
 ---
 

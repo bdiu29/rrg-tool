@@ -61,12 +61,16 @@ def compute_rrg(tickers, benchmark, interval, tail=6, asof=None, close=None):
     # Live-only conviction refinements: current regime + per-symbol flag edge +
     # volume exhaustion (real sector ETFs only — synthetic theme indices have no
     # volume). All fail-soft: the chart must render even if breadth/yfinance hiccup.
-    regime, wr_map, exh_map = None, {}, {}
+    regime, rotation, wr_map, exh_map = None, None, {}, {}
     if not injected:
         try:
             regime = signal.current_regime()
         except Exception:
             regime = None
+        try:
+            rotation = signal.rotation_regime()
+        except Exception:
+            rotation = None
         try:
             wr_map = signal.flag_win_rates_for(list(series))
         except Exception:
@@ -88,7 +92,7 @@ def compute_rrg(tickers, benchmark, interval, tail=6, asof=None, close=None):
         if win.empty:
             continue
         ev = signal.evaluate_tail(win, flag_wr=wr_map.get(t), regime=regime,
-                                  vol_exh=exh_map.get(t))
+                                  vol_exh=exh_map.get(t), rotation=rotation)
 
         prices     = close[t].dropna()
         change_pct = rel_pct = None
@@ -120,7 +124,8 @@ def compute_rrg(tickers, benchmark, interval, tail=6, asof=None, close=None):
                 "accum":    d["accum"],
             }
 
-    return {"sectors": results, "best": best, "date": date}
+    return {"sectors": results, "best": best, "date": date,
+            "regime": regime, "rotation": rotation}
 
 
 # ---------------------------------------------------------------------------
@@ -152,6 +157,8 @@ def _handle_rrg(req):
             "asof":      asof,
             "updated":   datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "date":      result.get("date"),
+            "rotation":  result.get("rotation"),
+            "regime":    result.get("regime"),
             "sectors":   result["sectors"],
             "best":      result["best"],
         })

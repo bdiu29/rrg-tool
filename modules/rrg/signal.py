@@ -124,6 +124,20 @@ FLAG_BASE_WIN = {"bull": 0.58, "bear": 0.50}
 FLAG_MIN_N    = 8       # fewer than this many events → distrust per-symbol, use basket default
 FLAG_OPPOSING = 0.0     # weight multiplier for a flag opposing the current regime
 
+# ROTATION-REGIME GATE. The backtest shows ROTATE IN only earns positive forward
+# excess when rotation is LIVE (equal-weight RSP leading cap-weight SPY); in a
+# concentration regime ("off") entries lose (≈−0.9% excess at +10/20d). So we
+# SUPPRESS bullish conviction when rotation is off — gating out the low-conviction
+# off-regime entries lifted equity (+67→+81%) and halved max drawdown (−21→−14%).
+# We do NOT boost when on: a positive on-tilt only drags marginal entries over the
+# T_IN line and dilutes the good bucket (let on-entries fire on their own merit).
+# The regime is RSP/SPY vs its EMA — trailing, no-lookahead — so this applies in the
+# BACKTEST too (unlike the per-symbol flag win rate, which is live-only). Judgment-
+# fixed, not searched.
+W_ROTATION_OFF = 30.0    # subtracted from conviction in a concentration regime
+W_ROTATION_ON  = 0.0     # no boost when broadening (boosting dilutes the good bucket)
+ROTATION_MA    = 50      # EMA span (daily bars) for the RSP/SPY trend
+
 # Flag pattern: a strong impulse leg (the flagpole) followed by a brief, shallow,
 # tight consolidation against it (the flag) → continuation in the pole's direction.
 FLAG_RETR_MAX = 0.45   # the flag may retrace at most this much of the pole
@@ -925,6 +939,15 @@ def _conviction(ws, params=None):
     if trend in ("up", "down") and wave != "—" and abs(bull - bear) > 1e-9:
         add(W_CLEAN if bull > bear else -W_CLEAN, "clean count")
 
+    # Market-wide rotation gate, applied LAST so the clean-count still reflects the
+    # wave/confluence lean, not the regime. Off (concentration) suppresses entries;
+    # on (broadening) mildly supports them. Unknown → no tilt (fail-soft).
+    rot = ws.get("rotation")
+    if rot == "off":
+        add(-W_ROTATION_OFF, "rotation off")
+    elif rot == "on":
+        add(W_ROTATION_ON, "rotation on")
+
     return round(max(CONV_LO, min(CONV_HI, bull - bear)), 1), factors
 
 
@@ -1063,6 +1086,39 @@ def current_regime():
     except Exception:
         value = None
     _REGIME_CACHE.update(at=now, value=value)
+    return value
+
+
+_ROTATION_CACHE = {"at": 0.0, "value": None}
+
+
+def _rotation_label(rsp, spy, span=ROTATION_MA):
+    """Per-date 'on'/'off' Series from the RSP/SPY ratio vs its EMA. 'on' = equal-
+    weight leading cap-weight = breadth broadening (rotation live). Trailing EMA →
+    no-lookahead. Empty Series if the ratio can't be formed."""
+    ratio = (rsp / spy).dropna()
+    if ratio.empty:
+        return pd.Series(dtype=object)
+    ma = ratio.ewm(span=span, adjust=False).mean()
+    return pd.Series(np.where(ratio > ma, "on", "off"), index=ratio.index)
+
+
+def rotation_regime():
+    """Current rotation regime ('on'/'off') from RSP vs SPY, in-memory cached
+    ~10 min. Fail-soft → None (the conviction gate then applies no tilt)."""
+    now = time.time()
+    if now - _ROTATION_CACHE["at"] < _REGIME_TTL:
+        return _ROTATION_CACHE["value"]
+    value = None
+    try:
+        close = _fetch_close(["RSP", BENCHMARK], "1d", PERIOD)
+        if "RSP" in close.columns and BENCHMARK in close.columns:
+            lab = _rotation_label(close["RSP"], close[BENCHMARK])
+            if len(lab):
+                value = str(lab.iloc[-1])
+    except Exception:
+        value = None
+    _ROTATION_CACHE.update(at=now, value=value)
     return value
 
 
@@ -1225,17 +1281,18 @@ def compute_series(tickers, benchmark, interval, asof=None, params=None, close=N
     return out, date, close
 
 
-def evaluate_tail(window, params=None, flag_wr=None, regime=None, vol_exh=None):
+def evaluate_tail(window, params=None, flag_wr=None, regime=None, vol_exh=None,
+                  rotation=None):
     """Compute the quadrant + Elliott-wave call/scores for one tail window. The
     quadrant/heading/accum/distrib still come from the SIGNAL coords (chart
     geometry + call-card ranking); the call itself is driven by the wave/Fib
     state read off the head row's precomputed wave features.
 
     `flag_wr` ({"bull","bull_n","bear","bear_n"}), `regime` (HEALTHY/NEUTRAL/
-    DETERIORATING), and `vol_exh` ("buyer"/"seller") are the LIVE-only conviction
-    refinements (per-symbol flag edge, regime gate, volume exhaustion). They
-    default to None so `replay_calls` / the backtest keep the basket-default flag
-    weight and stay deterministic (no point-in-time-regime lookahead)."""
+    DETERIORATING), and `vol_exh` ("buyer"/"seller") are LIVE-only conviction
+    refinements (per-symbol flag edge has lookahead in a backtest). `rotation`
+    ("on"/"off", the RSP/SPY regime) is no-lookahead, so it's passed in BOTH live
+    and the backtest to gate entries in a concentration regime. All default None."""
     ratios  = [round(v, 3) for v in window["sig_ratio"].tolist()]
     moments = [round(v, 3) for v in window["sig_mom"].tolist()]
 
@@ -1276,6 +1333,7 @@ def evaluate_tail(window, params=None, flag_wr=None, regime=None, vol_exh=None):
         "flag_n_bear":   (flag_wr or {}).get("bear_n", 0),
         "regime":     regime,
         "vol_exh":    vol_exh,
+        "rotation":   rotation,
     }
     conviction, factors = _conviction(ws, params)
     ws["_score"] = conviction                 # avoid recomputing inside the call
@@ -1301,6 +1359,7 @@ def evaluate_tail(window, params=None, flag_wr=None, regime=None, vol_exh=None):
         "div_confluence": _div_confluence(ws),
         "regime":        regime,
         "vol_exh":       vol_exh,
+        "rotation":      rotation,
         "dir":           _direction(ratios, moments),
         "accum":         accum,
         "distrib":       distrib,
@@ -1313,17 +1372,22 @@ def evaluate_tail(window, params=None, flag_wr=None, regime=None, vol_exh=None):
     }
 
 
-def replay_calls(series, tail, params=None):
+def replay_calls(series, tail, params=None, rotation=None):
     """Walk every tail window over history → {ticker: {date: {call, quadrant,
     phase}}}. The backtest's source of signal events. Cheap: ~150 dates × 11
-    tickers × `tail`."""
+    tickers × `tail`. `rotation` (a per-date 'on'/'off' Series) gates entries by
+    the rotation regime as-of each window's head bar — no-lookahead via `.asof`."""
     out = {}
     for tk, df in series.items():
         timeline = {}
         n = len(df)
         for end in range(tail - 1, n):
             window = df.iloc[end - tail + 1:end + 1]
-            ev = evaluate_tail(window, params)
+            rot = None
+            if rotation is not None and len(rotation):
+                r = rotation.asof(df.index[end])     # last known regime ≤ head date
+                rot = r if isinstance(r, str) else None
+            ev = evaluate_tail(window, params, rotation=rot)
             timeline[df.index[end]] = {
                 "call":       ev["call"],
                 "conviction": ev["conviction"],

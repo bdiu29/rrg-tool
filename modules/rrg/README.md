@@ -91,15 +91,26 @@ The axes are pinned to a fixed 90–116 / 94–106 frame for day-to-day consiste
 
 ---
 
+## Confluence factors behind the call
+
+The call is driven by a signed **conviction** score that sums weighted confluence factors (golden-pocket depth, RSI divergence, multi-timeframe agreement, …). Three of them are worth calling out:
+
+- **Empirically-weighted flags.** A bull/bear flag contributes weight equal to its *measured* edge (`win_rate − 0.5`) — using the symbol's own historical flag win-rate where it has enough events, else a basket default — instead of a fixed weight. A flag that opposes the market regime (a bear flag in a healthy market, which tends to fail upward) is zeroed.
+- **Volume buyer/seller exhaustion.** A volume *climax* into a new high/low that closes weak/strong is a topping/bottoming tell; a selling climax adds bullish conviction, a buying climax bearish. (Read on the symbol's own price+volume — the RS line carries no volume.)
+- **Rotation-regime gate.** Conviction is suppressed when the broad market is in a *concentration* regime (equal-weight RSP below cap-weight SPY on trend), where a rotation signal structurally can't win. This is no-lookahead, so it also applies in the backtest.
+
 ## Backtesting the calls
 
-A **Strategy Backtest** tab on the page (and `POST /api/rrg/backtest`) replays the exact live call logic over ~3 years and asks the honest question: when the tool says ROTATE IN, does that sector actually beat SPY next?
+A **Strategy Backtest** tab on the page (and `POST /api/rrg/backtest`) replays the exact live call logic over ~3 years and asks the honest question: when the tool says ROTATE IN, does that sector actually beat the benchmark next?
 
-- **Forward-return table by call type** — mean / excess-vs-SPY / win-rate at +1/5/10/20 days, measured from the first bar *after* the signal confirms (no lookahead). A working tool shows ROTATE IN with positive excess and ROTATE OUT negative.
-- **Equity curve** — long the called sectors (exit on the opposing call, or a hold / ATR model), equal-weight, marked daily against SPY, with a trade-return histogram.
-- **Walk-forward** — re-tunes the gate thresholds with expanding time folds and shows in-sample vs out-of-sample side by side, so overfit on a small sample (11 ETFs) is visible rather than hidden. The shipped defaults were baked from this search; re-run it to recalibrate against forward returns.
+- **Universe toggle** — 11 SPDR sectors, ~40 sector+industry ETFs, or a ~34-name **de-correlated** set (one ETF per industry, so the backtest can't lean on a doubled bet like two bank ETFs). The broader sets give far more signal onsets for less noisy stats.
+- **Benchmark toggle** — score excess + equity vs **SPY** (cap-weight) or **RSP** (equal-weight). RSP is the fairer bar for sector rotation; it strips the mega-cap-beta penalty that makes SPY nearly unbeatable in a concentration regime. (The *signal* is always RS-vs-SPY — only the yardstick changes.)
+- **Forward-return table by call type** — mean / excess / win-rate at +1/5/10/20 days, no lookahead. A working tool shows ROTATE IN beating ROTATE OUT.
+- **Rotation-regime split** — the same table split by whether rotation was *live* (RSP/SPY rising) or not at each onset, so you can see the signal is regime-dependent rather than broken.
+- **Equity curve + contribution breakdown** — long the called sectors (exit on the opposing call, or a hold / ATR model), equal-weight, marked daily, with a trade-return histogram and a **per-symbol contribution** table (top-3 / top-5 share — is the return broad, or a few names carrying it?).
+- **Walk-forward** — re-tunes the gate thresholds with expanding time folds and shows in-sample vs out-of-sample side by side, so overfit on a small sample is visible rather than hidden.
 
-This is the replacement for the old "make the chart match a reference image" calibration — the calls are now tuned to forward returns, not to a picture.
+This is the replacement for the old "make the chart match a reference image" calibration — the calls are now tuned to forward returns, not to a picture. **Honest read:** the headline equity is concentration-driven (one theme + small-sample winners over ~3y), but the *relative* ranking edge (ROTATE IN beats ROTATE OUT) holds up out-of-sample — use the tool as a rotation **ranking**, gated to rotation-on regimes, not as a literal absolute-return strategy.
 
 ---
 

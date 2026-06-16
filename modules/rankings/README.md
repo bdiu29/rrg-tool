@@ -2,6 +2,10 @@
 
 [← Back to main README](../../README.md)
 
+<p align="center">
+  <img src="../../assets/screenshots/rankings.png" alt="Sector ETF relative-strength leaderboard with rank movers" width="800"/>
+</p>
+
 A scannable relative-strength leaderboard for the 11 SPDR Select Sector ETFs, benchmarked against SPY. Where the [RRG](../rrg/README.md) shows *direction of travel* on a chart, Rankings answers a flatter question at a glance: **which sectors are strongest right now, and which are gaining or losing ground?**
 
 Open at **http://localhost:8000/rankings.html**. The core leaderboard needs only Yahoo Finance (no key); the top-stocks-per-sector drill-down reuses the [Screener](../screener/README.md)'s synced data where available.
@@ -29,6 +33,8 @@ Pick a sector and the drill-down lists 15 names, with a toggle:
 
 - **Relative Strength** — the strongest stocks *classified* into that sector (across the synced universe), ranked by 1-month RS vs SPY.
 - **Top Holdings** — the ETF's **actual** top holdings by index weight (pulled live from the fund's holdings, ~10 names), with their weights and prices.
+
+In Relative-Strength mode each name also shows its historical **flag win-rate** (e.g. ▲58%) — how often a bull/bear flag on that stock continued in the pole's direction, regime-conditioned and read from the Screener's background-precomputed table (~90-day cache). A volume-exhaustion badge (climax↑ / climax↓) appears when the latest bar is a capitulation / blow-off.
 
 ---
 

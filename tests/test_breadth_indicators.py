@@ -85,6 +85,56 @@ class TestDailyAggregates(unittest.TestCase):
         self.assertEqual(agg["new_highs"].iloc[0], 0)   # window not full yet
 
 
+class TestMarketMonitor(unittest.TestCase):
+    def test_up_down_4pct_counts(self):
+        idx   = _dates(2)
+        close = pd.DataFrame({
+            "A": [100.0, 105.0],   # +5%  → up4
+            "B": [100.0, 96.0],    # -4%  → down4
+            "C": [100.0, 101.0],   # +1%  → neither
+        }, index=idx)
+        mm = ind.market_monitor(close, close, close)
+        self.assertEqual(len(mm), 1)                 # first day dropped (no prev)
+        self.assertEqual(mm["up4"].iloc[0], 1)
+        self.assertEqual(mm["down4"].iloc[0], 1)
+        self.assertEqual(mm["advances"].iloc[0], 2)  # A and C up
+        self.assertEqual(mm["declines"].iloc[0], 1)
+
+    def test_ratio_is_rolling_sum_quotient(self):
+        # 7 days of varied moves → ratio5 on the last row spans days 3-7 only
+        # (not the dropped first day), so it must equal Σup4 / Σdown4 over the
+        # last 5 returned rows.
+        idx   = _dates(7)
+        close = pd.DataFrame({
+            "A": [100, 106, 100, 112, 100, 108, 100],   # alternating ±>4%
+            "B": [100, 100, 105, 100, 110, 100, 105],
+        }, index=idx, dtype=float)
+        mm = ind.market_monitor(close, close, close)
+        exp = mm["up4"].iloc[-5:].sum() / mm["down4"].iloc[-5:].sum()
+        self.assertGreater(mm["down4"].iloc[-5:].sum(), 0)
+        self.assertAlmostEqual(mm["ratio5"].iloc[-1], exp)
+
+    def test_month_25pct_count_and_eligibility(self):
+        idx = _dates(25)
+        a   = np.linspace(100, 140, 25)         # +31% over the trailing 20 bars
+        b   = np.full(25, 100.0)                # flat
+        c   = np.full(25, np.nan)               # only the last 10 bars exist
+        c[-10:] = np.linspace(50, 100, 10)      # +100% but < 20 bars of history
+        close = pd.DataFrame({"A": a, "B": b, "C": c}, index=idx)
+        mm = ind.market_monitor(close, close, close)
+        # Only A clears +25% over 20 bars; C lacks 20 prior bars ⇒ ineligible.
+        self.assertEqual(mm["up25m"].iloc[-1], 1)
+
+    def test_atr_extension_and_pct_above_50(self):
+        idx = _dates(55)
+        a   = np.full(55, 100.0); a[-1] = 200.0   # flat then a blow-off spike
+        b   = np.full(55, 100.0)                   # flat throughout
+        close = pd.DataFrame({"A": a, "B": b}, index=idx)
+        mm = ind.market_monitor(close, close, close)
+        self.assertEqual(mm["atr_ext"].iloc[-1], 1)        # only A is extended
+        self.assertAlmostEqual(mm["pct_above_50"].iloc[-1], 50.0)  # A above, B not
+
+
 class TestDerivedChains(unittest.TestCase):
     def _agg(self, adv, dec, upv=None, dnv=None, nh=None, nl=None):
         n = len(adv)
