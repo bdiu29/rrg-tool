@@ -19,6 +19,7 @@ from modules.breadth import register_routes as register_breadth
 from modules.screener import register_routes as register_screener
 from modules.rankings import register_routes as register_rankings
 from modules.themes import register_routes as register_themes
+from modules.flow import register_routes as register_flow
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +76,7 @@ register_breadth(router)
 register_screener(router)
 register_rankings(router)
 register_themes(router)
+register_flow(router)
 
 
 # ---------------------------------------------------------------------------

@@ -167,6 +167,12 @@
     <span class="badge" id="themes-badge">loading…</span>
   </a>
 
+  <a class="card" href="/flow.html">
+    <h2>Options Flow</h2>
+    <p>Unusual options activity — whale entries/exits filtered by the trader's 6 rules (VOL/OI, size-in-context, clusters, timeframe, confluence). Schwab snapshots now; Polygon-ready.</p>
+    <span class="badge" id="flow-badge">loading…</span>
+  </a>
+
 </div>
 
 <div class="section-label">Planned</div>
@@ -323,12 +329,35 @@ async function loadThemesBadge() {
   }
 }
 
+async function loadFlowBadge() {
+  const el = document.getElementById('flow-badge');
+  try {
+    const r = await fetch('/api/flow/summary');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    if (d.conviction_count > 0 && d.lead) {
+      el.textContent = `${d.conviction_count} whale ${d.conviction_count === 1 ? 'entry' : 'entries'} · ${d.lead.underlying}`;
+      el.className = 'badge accent';
+    } else if (d.flagged_count > 0) {
+      el.textContent = `${d.flagged_count} flagged`;
+      el.className = 'badge';
+    } else {
+      el.textContent = 'no unusual flow';
+      el.className = 'badge';
+    }
+  } catch {
+    el.textContent = 'no data';
+    el.className = 'badge';
+  }
+}
+
 loadBreadthBadge();
 loadRrgBadge();
 loadSchwabBadge();
 loadScreenerBadge();
 loadRankingsBadge();
 loadThemesBadge();
+loadFlowBadge();
 </script>
 
 </body>

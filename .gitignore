@@ -20,3 +20,5 @@ modules/screener/data/
 
 # Themes module local data store
 modules/themes/data/
+# Flow module local data store
+modules/flow/data/
