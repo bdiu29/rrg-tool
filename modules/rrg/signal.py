@@ -28,7 +28,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-from . import flags, exhaustion
+from modules.confluence import flags, exhaustion, volume_profile
 
 # ---------------------------------------------------------------------------
 # Public config (re-exported by __init__ — schwab imports these)
@@ -100,6 +100,8 @@ W_DIV       = 18.0   # each RSI divergence (RS or price) × TF weight
 W_W4ZONE    = 15.0   # C-bottom sitting in the prior wave-4 confluence zone
 W_CLEAN     = 10.0   # clean (unambiguous) wave count
 W_VOL_EXH   = 14.0   # volume buyer/seller exhaustion (× TF weight) — topping/bottoming tell
+W_VOL_PROFILE = 12.0 # volume-profile structure (× signed strength × TF weight) — price in
+                     # discount/premium vs its value area; a value-buy/value-sell confluence
 
 # Flag contribution is now EMPIRICAL + REGIME-AWARE (replaced the flat W_FLAG=25):
 # the weight is the flag's measured edge `(win_rate − 0.5)`, scaled by W_FLAG_EDGE,
@@ -930,6 +932,14 @@ def _conviction(ws, params=None):
         add(W_VOL_EXH * TF_WEIGHT["1wk"], "sell exhaustion")
     elif ex == "buyer":
         add(-W_VOL_EXH * TF_WEIGHT["1wk"], "buy exhaustion")
+    # volume-profile structure (the symbol's absolute price vs its value area): price
+    # in DISCOUNT (below value) is a value-buy → bullish, in PREMIUM bearish; a
+    # bottoming (b) / topping (P) profile shape reinforces. Graded strength [-1,1]
+    # from the confluence leaf — confluence the RS-line wave engine can't see.
+    vp = ws.get("vol_profile")
+    if vp:
+        vp_s, vp_lab = volume_profile.contribution(vp)
+        add(W_VOL_PROFILE * vp_s * TF_WEIGHT["1wk"], vp_lab or "vol profile")
     # prior wave-4 confluence on a wave-C bottom
     if wave == "wave-C" and np.isfinite(cur) and np.isfinite(c_hi) and cur <= c_hi \
             and np.isfinite(w4) and abs(w4) > 1e-9 and abs(cur - w4) <= 0.10 * abs(w4):
@@ -1191,6 +1201,33 @@ def exhaustion_for(symbols, period=FLAG_WR_PERIOD):
     return out
 
 
+def volume_profile_for(symbols, period=FLAG_WR_PERIOD):
+    """Current volume-profile read per symbol from daily OHLCV (one cached
+    `fetch_ohlc`, shared with the exhaustion/flag reads → no extra download).
+    Returns {symbol: read dict | None}. Fail-soft → {}. A LIVE-only conviction
+    refinement (real sectors only — synthetic theme indices carry no volume); the
+    profile is trailing/no-lookahead, so it could later be promoted into the backtest."""
+    symbols = [s for s in symbols if s]
+    if not symbols:
+        return {}
+    try:
+        ohlc = fetch_ohlc(symbols, period=period)
+    except Exception:
+        return {}
+    high, low, close, vol = (ohlc.get("high"), ohlc.get("low"),
+                             ohlc.get("close"), ohlc.get("volume"))
+    if close is None or vol is None:
+        return {}
+    out = {}
+    for s in symbols:
+        if s in close.columns and s in vol.columns and s in high.columns and s in low.columns:
+            try:
+                out[s] = volume_profile.current(high[s], low[s], close[s], vol[s])
+            except Exception:
+                out[s] = None
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Series + per-tail evaluation
 # ---------------------------------------------------------------------------
@@ -1282,17 +1319,18 @@ def compute_series(tickers, benchmark, interval, asof=None, params=None, close=N
 
 
 def evaluate_tail(window, params=None, flag_wr=None, regime=None, vol_exh=None,
-                  rotation=None):
+                  rotation=None, vol_profile=None):
     """Compute the quadrant + Elliott-wave call/scores for one tail window. The
     quadrant/heading/accum/distrib still come from the SIGNAL coords (chart
     geometry + call-card ranking); the call itself is driven by the wave/Fib
     state read off the head row's precomputed wave features.
 
     `flag_wr` ({"bull","bull_n","bear","bear_n"}), `regime` (HEALTHY/NEUTRAL/
-    DETERIORATING), and `vol_exh` ("buyer"/"seller") are LIVE-only conviction
-    refinements (per-symbol flag edge has lookahead in a backtest). `rotation`
-    ("on"/"off", the RSP/SPY regime) is no-lookahead, so it's passed in BOTH live
-    and the backtest to gate entries in a concentration regime. All default None."""
+    DETERIORATING), `vol_exh` ("buyer"/"seller"), and `vol_profile` (a confluence
+    `volume_profile.current` read) are LIVE-only conviction refinements (per-symbol
+    stats have lookahead in a backtest). `rotation` ("on"/"off", the RSP/SPY regime)
+    is no-lookahead, so it's passed in BOTH live and the backtest to gate entries in
+    a concentration regime. All default None."""
     ratios  = [round(v, 3) for v in window["sig_ratio"].tolist()]
     moments = [round(v, 3) for v in window["sig_mom"].tolist()]
 
@@ -1334,6 +1372,7 @@ def evaluate_tail(window, params=None, flag_wr=None, regime=None, vol_exh=None,
         "regime":     regime,
         "vol_exh":    vol_exh,
         "rotation":   rotation,
+        "vol_profile": vol_profile,
     }
     conviction, factors = _conviction(ws, params)
     ws["_score"] = conviction                 # avoid recomputing inside the call
@@ -1360,6 +1399,12 @@ def evaluate_tail(window, params=None, flag_wr=None, regime=None, vol_exh=None,
         "regime":        regime,
         "vol_exh":       vol_exh,
         "rotation":      rotation,
+        # volume-profile structure (None in the backtest / themes — live-only)
+        "vp_shape":      (vol_profile or {}).get("shape"),
+        "vp_zone":       (vol_profile or {}).get("zone"),
+        "poc":           (vol_profile or {}).get("poc"),
+        "vah":           (vol_profile or {}).get("vah"),
+        "val":           (vol_profile or {}).get("val"),
         "dir":           _direction(ratios, moments),
         "accum":         accum,
         "distrib":       distrib,

@@ -61,7 +61,7 @@ def compute_rrg(tickers, benchmark, interval, tail=6, asof=None, close=None):
     # Live-only conviction refinements: current regime + per-symbol flag edge +
     # volume exhaustion (real sector ETFs only — synthetic theme indices have no
     # volume). All fail-soft: the chart must render even if breadth/yfinance hiccup.
-    regime, rotation, wr_map, exh_map = None, None, {}, {}
+    regime, rotation, wr_map, exh_map, vp_map = None, None, {}, {}, {}
     if not injected:
         try:
             regime = signal.current_regime()
@@ -79,6 +79,10 @@ def compute_rrg(tickers, benchmark, interval, tail=6, asof=None, close=None):
             exh_map = signal.exhaustion_for(list(series))
         except Exception:
             exh_map = {}
+        try:
+            vp_map = signal.volume_profile_for(list(series))
+        except Exception:
+            vp_map = {}
 
     bench = close[benchmark]
     bench_prices = bench.dropna()
@@ -92,7 +96,8 @@ def compute_rrg(tickers, benchmark, interval, tail=6, asof=None, close=None):
         if win.empty:
             continue
         ev = signal.evaluate_tail(win, flag_wr=wr_map.get(t), regime=regime,
-                                  vol_exh=exh_map.get(t), rotation=rotation)
+                                  vol_exh=exh_map.get(t), rotation=rotation,
+                                  vol_profile=vp_map.get(t))
 
         prices     = close[t].dropna()
         change_pct = rel_pct = None

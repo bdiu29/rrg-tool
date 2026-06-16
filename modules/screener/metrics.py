@@ -10,12 +10,11 @@ live intraday) price is detectable against yesterday's level.
 import numpy as np
 import pandas as pd
 
-# Flag + volume-exhaustion detection are owned by the rrg leaves (single source of
-# truth, shared with the conviction engine and the flag study); we reuse the
-# vectorized panel forms here rather than re-implementing them. No new I/O — the
-# screener already loads rrg via its package init.
-from modules.rrg import flags as rrg_flags
-from modules.rrg import exhaustion as rrg_exhaustion
+# Flag + volume-exhaustion detection are owned by the confluence leaves (single
+# source of truth, shared with the conviction engine and the flag study); we reuse
+# the vectorized panel forms here rather than re-implementing them. No new I/O.
+from modules.confluence import flags as rrg_flags
+from modules.confluence import exhaustion as rrg_exhaustion
 
 # ≈320 trading bars: 252 for 52-week levels + warmup buffer for SMA200/RSI.
 SNAPSHOT_LOOKBACK_DAYS = 470
