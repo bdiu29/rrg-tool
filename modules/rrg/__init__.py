@@ -116,18 +116,29 @@ def compute_rrg(tickers, benchmark, interval, tail=6, asof=None, close=None):
             **ev,
         }
 
+    # "Best Setup" = the strongest *rotation* read, ranked by the probabilistic
+    # conviction score (not the legacy `accum`, whose +room bonus for laggards kept
+    # it pinned to defensive sectors like XLV). Prefer an actual ROTATE IN onset;
+    # if none qualifies, surface the highest-conviction sector and flag it honestly.
     best = None
-    for t, d in results.items():
-        if best is None or d["accum"] > best["accum"]:
-            best = {
-                "ticker":   t,
-                "name":     d["name"],
-                "ratio":    d["ratio"][-1],
-                "momentum": d["momentum"][-1],
-                "quadrant": d["quadrant"],
-                "dir":      d["dir"],
-                "accum":    d["accum"],
-            }
+    ranked = sorted(results.items(),
+                    key=lambda kv: (kv[1].get("conviction") or -1e9), reverse=True)
+    in_setups = [(t, d) for t, d in ranked if d.get("call") == "ROTATE IN"]
+    pool = in_setups or ranked
+    if pool:
+        t, d = pool[0]
+        best = {
+            "ticker":     t,
+            "name":       d["name"],
+            "ratio":      d["ratio"][-1],
+            "momentum":   d["momentum"][-1],
+            "quadrant":   d["quadrant"],
+            "dir":        d["dir"],
+            "accum":      d["accum"],
+            "conviction": d.get("conviction"),
+            "call":       d.get("call"),
+            "is_setup":   bool(in_setups),
+        }
 
     return {"sectors": results, "best": best, "date": date,
             "regime": regime, "rotation": rotation}

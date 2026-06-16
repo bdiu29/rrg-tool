@@ -1,13 +1,16 @@
 {
  "1d": {
   "best": {
-   "accum": 77,
-   "dir": "\u2192\u2193",
-   "momentum": 104.167,
-   "name": "AAA",
-   "quadrant": "Leading",
-   "ratio": 103.608,
-   "ticker": "AAA"
+   "accum": 42,
+   "call": "AVOID",
+   "conviction": 42.4,
+   "dir": "\u2190\u2193",
+   "is_setup": false,
+   "momentum": 98.298,
+   "name": "BBB",
+   "quadrant": "Lagging",
+   "ratio": 88.928,
+   "ticker": "BBB"
   },
   "date": "2024-02-22",
   "regime": null,
@@ -258,13 +261,16 @@
  },
  "1wk": {
   "best": {
-   "accum": 58,
-   "dir": "\u00b7\u2191",
-   "momentum": 100.189,
-   "name": "CCC",
-   "quadrant": "Leading",
-   "ratio": 104.5,
-   "ticker": "CCC"
+   "accum": 52,
+   "call": "AVOID",
+   "conviction": 42.4,
+   "dir": "\u2190\u2193",
+   "is_setup": false,
+   "momentum": 95.94,
+   "name": "BBB",
+   "quadrant": "Lagging",
+   "ratio": 93.216,
+   "ticker": "BBB"
   },
   "date": "2024-02-22",
   "regime": null,

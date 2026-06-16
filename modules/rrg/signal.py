@@ -21,6 +21,7 @@ quadrant boundary off the true RS=100 line, and the gates were denominated in
 chart units that differed between intervals.
 """
 
+import logging
 import math
 import time
 
@@ -30,6 +31,12 @@ import numpy as np
 
 from modules.confluence import flags, exhaustion, volume_profile
 from modules.confluence import wave as wave_eng
+
+# yfinance logs every transient bulk-download hiccup (e.g. the intermittent
+# "1 Failed download: ['XLB']: TypeError('NoneType' object is not subscriptable)")
+# at ERROR level. We own retry + fail-soft for those (see `_fetch_close`), so quiet
+# the library's per-download error spam to keep the server console readable.
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 # ---------------------------------------------------------------------------
 # Public config (re-exported by __init__ — schwab imports these)
@@ -516,16 +523,41 @@ _PRICE_CACHE = {}     # (interval, sorted symbols) -> (fetched_at, close_df)
 _PRICE_TTL   = 600    # seconds
 
 
+def _download_close(symbols, interval, period):
+    """One yfinance close pull → DataFrame (one column per symbol). Handles both
+    the multi-symbol (MultiIndex) and single-symbol (flat) column shapes."""
+    raw = yf.download(
+        symbols, period=period, interval=interval,
+        auto_adjust=True, progress=False, group_by="column",
+    )
+    if isinstance(raw.columns, pd.MultiIndex):
+        if "Close" in raw.columns.get_level_values(0):
+            return raw["Close"].copy()
+        return pd.DataFrame()
+    if "Close" in raw.columns:                       # single symbol → flat columns
+        return raw["Close"].to_frame(symbols[0])
+    return pd.DataFrame()
+
+
 def _fetch_close(symbols, interval, period=PERIOD):
     key = (interval, tuple(sorted(symbols)))
     hit = _PRICE_CACHE.get(key)
     if hit and time.time() - hit[0] < _PRICE_TTL:
         return hit[1]
-    raw = yf.download(
-        symbols, period=period, interval=interval,
-        auto_adjust=True, progress=False, group_by="column",
-    )
-    close = raw["Close"] if isinstance(raw.columns, pd.MultiIndex) else raw.to_frame()
+    close = _download_close(list(symbols), interval, period)
+    # yfinance intermittently drops a symbol or two from a bulk pull (a transient
+    # rate-limit / 'NoneType' hiccup). Re-fetch just the missing ones a couple of
+    # times so one bad draw doesn't silently strip a theme constituent or sector.
+    for _ in range(2):
+        missing = [s for s in symbols
+                   if s not in close.columns or close[s].dropna().empty]
+        if not missing:
+            break
+        time.sleep(0.8)
+        retry = _download_close(missing, interval, period)
+        for s in missing:
+            if s in retry.columns and not retry[s].dropna().empty:
+                close[s] = retry[s]
     close = close.dropna(how="all").ffill()
     _PRICE_CACHE[key] = (time.time(), close)
     return close

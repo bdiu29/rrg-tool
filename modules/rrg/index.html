@@ -229,7 +229,8 @@
   .conv-chip.conv-neg { color: #e05563; }
   .legend-item.low-conf { opacity: 0.4; }            /* below the min-confidence slider */
   .legend-item.low-conf .conv-chip { opacity: 0.7; }
-  .legend-item .call-badge {
+  .legend-item .call-badge,
+  .bn-detail .call-badge {
     margin-left: 8px;
     font-size: 8.5px;
     font-weight: 700;
@@ -828,22 +829,30 @@ function buildBanner(best) {
   const b = $('banner');
   b.style.display = 'flex';
   const c = colorFor(best.ticker);
+  // Rank is conviction-driven now, so the banner reflects the *real* call. A live
+  // ROTATE IN onset = "Best Setup Active"; otherwise we're honest that it's just
+  // the strongest read on the board, not an entry.
+  const setup = best.is_setup;
+  const stroke = setup ? '#2ecc71' : '#8a93a8';
+  b.style.opacity = setup ? '1' : '0.92';
   const icon =
     `<svg class="bn-icon" width="24" height="24" viewBox="0 0 24 24" fill="none"
-          stroke="#2ecc71" stroke-width="1.8">
+          stroke="${stroke}" stroke-width="1.8">
        <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/>
-       <circle cx="12" cy="12" r="1.6" fill="#2ecc71" stroke="none"/>
+       <circle cx="12" cy="12" r="1.6" fill="${stroke}" stroke="none"/>
      </svg>`;
+  const cs = CALL_STYLE[best.call] || CALL_STYLE['WATCH'];
   b.innerHTML =
     `${icon}
      <span class="bn-text">
-       <span class="bn-title">Best Setup Active</span>
+       <span class="bn-title" style="color:${stroke}">${setup ? 'Best Setup Active' : 'Strongest Rotation Read'}</span>
        <span class="bn-detail">
          <span class="tk" style="color:${c}">${best.ticker}</span>
+         <span class="call-badge ${cs.cls}" style="margin-left:0">${best.call || '—'}</span>
          <span>${best.quadrant.toLowerCase()}</span>
          <span class="arrow">${best.dir}</span>
          <span class="dot">·</span>
-         <span class="accum">ACCUM <b>${best.accum}</b></span>
+         ${convChip(best.conviction)}
        </span>
      </span>`;
 }

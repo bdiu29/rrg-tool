@@ -4,7 +4,7 @@ SQLite store for the themes module.
 A theme is a named, user-editable basket of stock tickers. Storage mirrors the
 screener's watchlist pattern (named list + symbols child table, CRUD that
 replaces symbols wholesale). WAL mode + per-call connections, same conventions
-as the other modules. Six built-in themes are seeded on first init; the user
+as the other modules. Ten built-in themes are seeded on first init; the user
 refines membership in the UI.
 """
 
@@ -54,6 +54,18 @@ BUILTIN_THEMES = [
     {"name": "AI Biotech",
      "description": "AI/ML-driven drug discovery & techbio.",
      "symbols": ["RXRX", "SDGR", "TEM", "ABSI", "ABCL", "DNA", "CRSP", "NTLA"]},
+    {"name": "Quantum Computing",
+     "description": "Quantum computing hardware, software & post-quantum security.",
+     "symbols": ["IONQ", "RGTI", "QBTS", "QUBT", "ARQQ", "LAES", "QMCO"]},
+    {"name": "Nuclear",
+     "description": "Nuclear power, SMRs, uranium miners & fuel.",
+     "symbols": ["CCJ", "LEU", "OKLO", "SMR", "NNE", "BWXT", "CEG", "VST", "UEC", "NXE"]},
+    {"name": "Rare Earths & Critical Minerals",
+     "description": "Rare-earth & critical-mineral miners and processors.",
+     "symbols": ["MP", "USAR", "TMC", "UUUU", "CRML", "NB", "UAMY", "ALB"]},
+    {"name": "Apparel",
+     "description": "Apparel, footwear & accessories brands.",
+     "symbols": ["NKE", "LULU", "DECK", "ONON", "BIRK", "SKX", "CROX", "RL", "TPR", "ANF"]},
 ]
 
 

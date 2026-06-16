@@ -233,7 +233,7 @@ def _handle_summary(req):
 
 
 def register_routes(router):
-    themes_store.init_db()        # creates tables + seeds the 6 built-in themes
+    themes_store.init_db()        # creates tables + seeds the built-in themes
     router.get("/themes.html",        _handle_index)
     router.get("/api/themes",         _handle_themes)
     router.get("/api/themes/summary", _handle_summary)
