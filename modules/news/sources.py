@@ -74,6 +74,13 @@ def alphavantage_key():
     return os.environ.get("ALPHAVANTAGE_API_KEY") or _read_env().get("ALPHAVANTAGE_API_KEY") or ""
 
 
+def polygon_key():
+    """Polygon.io / Massive key. NOTE the project-canonical name is POLYGON_IO_KEY
+    (the flow stub reads the same)."""
+    import os
+    return os.environ.get("POLYGON_IO_KEY") or _read_env().get("POLYGON_IO_KEY") or ""
+
+
 def _parse_dt(raw):
     """RSS/Atom date string → datetime (tz-aware when given), or None."""
     if not raw:
@@ -705,6 +712,80 @@ class AlphaVantageNewsSource(EventSource):
         return out
 
 
+_POLY_SENTIMENT = {"positive": "Bullish", "negative": "Bearish", "neutral": "Neutral"}
+
+
+class PolygonNewsSource(EventSource):
+    """Ticker news + Benzinga-derived sentiment & insights (keyed: POLYGON_IO_KEY).
+
+    Polygon/Massive's FREE tier grants this news endpoint — the OPRA options tape and
+    chain snapshots it would feed the flow module do NOT (they 403 NOT_AUTHORIZED on
+    free; a paid Options plan is required). So the free-tier value lands here: richer
+    than the bare RSS feeds (per-article ticker tags + a sentiment label) and a far
+    more generous rate limit than AlphaVantage's ~25/day. Fail-soft → []."""
+    name = "polygon_news"
+
+    URL = "https://api.polygon.io/v2/reference/news"
+
+    def fetch(self, start, end):
+        key = polygon_key()
+        if not key:
+            return []
+        raw = _http_get(self.URL, {"limit": 100, "order": "desc",
+                                   "sort": "published_utc", "apiKey": key})
+        if not raw:
+            return []
+        try:
+            results = json.loads(raw).get("results", []) or []
+        except Exception:
+            return []
+        out, seen = [], set()
+        for a in results:
+            dt = _parse_dt(a.get("published_utc"))
+            if dt is None or not (start <= dt.date() <= end):
+                continue
+            title = (a.get("title") or "").strip()
+            if not title:
+                continue
+            tickers   = [t for t in (a.get("tickers") or []) if t][:6]
+            publisher = (a.get("publisher") or {}).get("name") or "Polygon"
+            # Polygon reposts wire press releases in many languages (title, URL AND
+            # description are all translated) — the stable identity is the same wire at
+            # the same instant on the same tickers. Fall back to the title for tickerless
+            # items so distinct general-market headlines aren't over-collapsed.
+            kdup = ((a.get("published_utc"), publisher, tuple(sorted(tickers)))
+                    if tickers else (a.get("published_utc"), publisher, title))
+            if kdup in seen:
+                continue
+            seen.add(kdup)
+            out.append(_event("polygon_news", "news", dt.date(), title,
+                              importance="low", url=a.get("article_url"),
+                              event_time=dt.strftime("%H:%M"),
+                              symbols=tickers or None,
+                              extra={"source_name": publisher,
+                                     "sentiment": self._sentiment(a.get("insights")),
+                                     "tickers": tickers}))
+        return out
+
+    @staticmethod
+    def _sentiment(insights):
+        """Polygon's per-ticker insights → one overall label the feed's pill renders
+        (Bullish/Bearish/Neutral). Majority vote, with neutral broken only if it's the
+        sole read so a tagged direction wins. None when there are no insights."""
+        if not insights:
+            return None
+        votes = {}
+        for ins in insights:
+            s = (ins.get("sentiment") or "").lower()
+            if s in _POLY_SENTIMENT:
+                votes[s] = votes.get(s, 0) + 1
+        if not votes:
+            return None
+        directional = {k: v for k, v in votes.items() if k != "neutral"}
+        tally = directional or votes
+        return _POLY_SENTIMENT[max(tally, key=tally.get)]
+
+
 # ---------------------------------------------------------------------------
 # Registry
 # ---------------------------------------------------------------------------
@@ -712,4 +793,5 @@ class AlphaVantageNewsSource(EventSource):
 ALL_SOURCES = [
     FOMCSource(), EconCalendarSource(), FedRSSSource(), EarningsCalendarSource(),
     MarketNewsRSSSource(), Edgar8KSource(), AlphaVantageNewsSource(),
+    PolygonNewsSource(),
 ]

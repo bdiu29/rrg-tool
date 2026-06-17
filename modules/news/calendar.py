@@ -272,12 +272,17 @@ def build_news_feed(focus_only=False, limit=80, days_back=5):
         days.append({"date": ds, "label": f"{dd.strftime('%A, %B')} {dd.day}".upper(),
                      "is_today": dd == today, "items": by_day[ds]})
 
-    keyed = bool(sources.alphavantage_key())
-    note  = ("Market headlines (RSS) + SEC 8-K filings" +
-             (" + AlphaVantage sentiment & tagging." if keyed else
-              "; set ALPHAVANTAGE_API_KEY for sentiment + ticker tagging."))
+    av_keyed   = bool(sources.alphavantage_key())
+    poly_keyed = bool(sources.polygon_key())
+    enrich = [n for n, on in (("Polygon", poly_keyed), ("AlphaVantage", av_keyed)) if on]
+    note = "Market headlines (RSS) + SEC 8-K filings"
+    if enrich:
+        note += " + " + " & ".join(enrich) + " sentiment & ticker tagging."
+    else:
+        note += "; set POLYGON_IO_KEY or ALPHAVANTAGE_API_KEY for sentiment + ticker tagging."
     return {"as_of": today.strftime("%Y-%m-%d"), "days": days, "count": len(items),
-            "focus_only": focus_only, "av_keyed": keyed, "note": note}
+            "focus_only": focus_only, "av_keyed": av_keyed, "poly_keyed": poly_keyed,
+            "note": note}
 
 
 # ---------------------------------------------------------------------------

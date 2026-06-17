@@ -154,10 +154,12 @@ class PolygonOptionsSource(OptionsFlowSource):
     name                = "polygon"
     supports_aggressor  = True
     supports_trade_tape = True
+    chains_implemented  = False   # get_chain/get_trades are stubs; also a PAID Options
+                                  # plan is required (free tier 403s on options data)
 
     def __init__(self):
         from modules.schwab import _read_env
-        self.key = _read_env().get("POLYGON_API_KEY")
+        self.key = _read_env().get("POLYGON_IO_KEY")
 
     def get_chain(self, symbol):
         raise NotImplementedError("PolygonOptionsSource.get_chain not implemented yet")
@@ -175,9 +177,13 @@ def resolve_source(preferred="schwab"):
     if preferred == "polygon":
         try:
             src = PolygonOptionsSource()
-            if src.key:
-                return src, None
-            return SchwabOptionsSource(), "POLYGON_API_KEY not set — using Schwab snapshots"
+            if not src.key:
+                return SchwabOptionsSource(), "POLYGON_IO_KEY not set — using Schwab snapshots"
+            if not src.chains_implemented:
+                # Free tier 403s on options; the chain/tape adapter is still a stub.
+                return SchwabOptionsSource(), ("Polygon options need a paid Options plan — "
+                                               "using Schwab snapshots")
+            return src, None
         except Exception as e:
             return SchwabOptionsSource(), f"Polygon unavailable ({e}) — using Schwab snapshots"
     return SchwabOptionsSource(), None

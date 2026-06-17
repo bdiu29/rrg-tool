@@ -230,6 +230,64 @@ class FredValuesTest(unittest.TestCase):
             sources.fred_key, sources.fred_observations = self._orig_k, self._orig_o
 
 
+class PolygonNewsSourceTest(unittest.TestCase):
+    """Polygon /v2/reference/news → normalized feed events (no network)."""
+
+    PAYLOAD = json.dumps({"results": [
+        {"title": "Acme beats on earnings", "article_url": "http://x/1",
+         "published_utc": "2026-06-12T13:30:00Z", "description": "Acme Q2 beat.",
+         "tickers": ["ACME", "SPY"], "publisher": {"name": "Benzinga"},
+         "insights": [{"ticker": "ACME", "sentiment": "positive"},
+                      {"ticker": "SPY", "sentiment": "neutral"}]},
+        # Translated repost: different title/url/description but SAME wire + time +
+        # tickers (order-independent) → deduped.
+        {"title": "Acme bate estimaciones", "article_url": "http://x/1-es",
+         "published_utc": "2026-06-12T13:30:00Z", "description": "Acme superó.",
+         "tickers": ["SPY", "ACME"], "publisher": {"name": "Benzinga"}, "insights": []},
+        # No insights → sentiment None; still tagged + dated.
+        {"title": "Widgets files 8-K", "article_url": "http://x/2",
+         "published_utc": "2026-06-11T18:00:00Z", "description": "Material event.",
+         "tickers": ["WDG"], "publisher": {"name": "GlobeNewswire"}},
+        # Outside the fetch window → dropped.
+        {"title": "Old news", "article_url": "http://x/3",
+         "published_utc": "2026-05-01T12:00:00Z", "description": "stale",
+         "tickers": ["OLD"], "publisher": {"name": "X"}},
+    ]})
+
+    def setUp(self):
+        self._orig_k, self._orig_h = sources.polygon_key, sources._http_get
+        sources.polygon_key = lambda: "k"
+        sources._http_get   = lambda url, params=None, **kw: self.PAYLOAD
+
+    def tearDown(self):
+        sources.polygon_key, sources._http_get = self._orig_k, self._orig_h
+
+    def test_parse_dedupe_and_sentiment(self):
+        evs = sources.PolygonNewsSource().fetch(date(2026, 6, 1), date(2026, 6, 30))
+        # The May item is out of window; the Spanish repost is deduped → 2 events.
+        self.assertEqual(len(evs), 2)
+        beat = [e for e in evs if e["title"].startswith("Acme beats")][0]
+        self.assertEqual(beat["kind"], "news")
+        self.assertEqual(beat["event_time"], "13:30")
+        x = json.loads(beat["extra"])
+        self.assertEqual(x["sentiment"], "Bullish")          # positive vote beats neutral
+        self.assertEqual(x["tickers"], ["ACME", "SPY"])
+        self.assertEqual(x["source_name"], "Benzinga")
+        wdg = [e for e in evs if e["title"].startswith("Widgets")][0]
+        self.assertIsNone(json.loads(wdg["extra"])["sentiment"])
+
+    def test_no_key_is_empty(self):
+        sources.polygon_key = lambda: ""
+        self.assertEqual(sources.PolygonNewsSource().fetch(date(2026, 6, 1), date(2026, 6, 30)), [])
+
+    def test_sentiment_majority(self):
+        s = sources.PolygonNewsSource._sentiment
+        self.assertEqual(s([{"sentiment": "negative"}, {"sentiment": "negative"},
+                            {"sentiment": "positive"}]), "Bearish")
+        self.assertEqual(s([{"sentiment": "neutral"}]), "Neutral")
+        self.assertIsNone(s([]))
+
+
 class WeekCalendarTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
