@@ -131,6 +131,12 @@
 <div class="section-label">Live Modules</div>
 <div class="grid">
 
+  <a class="card" href="/harness.html">
+    <h2>AI Subagent Harness</h2>
+    <p>The synthesis layer — every module casts a signed vote; a deterministic, regime-arbitrated combiner decides CONCENTRATE vs ROTATE and Claude narrates one confluence brief. Math decides, LLM explains.</p>
+    <span class="badge" id="harness-badge">loading…</span>
+  </a>
+
   <a class="card" href="/rrg.html">
     <h2>Relative Rotation Graph</h2>
     <p>Sector rotation vs SPY — JdK-style RS-Ratio / RS-Momentum with Elliott-wave phase model. ROTATE IN/OUT calls per sector.</p>
@@ -184,17 +190,6 @@
     <p>Economic calendar, FOMC decisions/minutes, Fed speeches &amp; focus-list earnings — with an event-risk read so you size smaller into the print. Free sources; FRED key upgrades to exact dates.</p>
     <span class="badge" id="news-badge">loading…</span>
   </a>
-
-</div>
-
-<div class="section-label">Planned</div>
-<div class="grid">
-
-  <div class="card planned">
-    <h2>AI Subagents</h2>
-    <p>One Claude subagent per data module, unified by a master harness agent.</p>
-    <span class="badge">planned</span>
-  </div>
 
 </div>
 
@@ -378,6 +373,26 @@ async function loadNewsBadge() {
   }
 }
 loadNewsBadge();
+
+async function loadHarnessBadge() {
+  const el = document.getElementById('harness-badge');
+  try {
+    const r = await fetch('/api/harness/summary');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    if (!d.text || d.text === 'not generated') {
+      el.textContent = 'open to generate';
+      el.className = 'badge';
+      return;
+    }
+    el.textContent = d.text;
+    el.className = 'badge ' + (d.status === 'healthy' ? 'healthy' : d.status === 'accent' ? 'accent' : 'neutral');
+  } catch {
+    el.textContent = 'no data';
+    el.className = 'badge';
+  }
+}
+loadHarnessBadge();
 </script>
 
 </body>

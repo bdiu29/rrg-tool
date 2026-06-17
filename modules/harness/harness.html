@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Harness — Market Intelligence Harness</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #ffffff; --panel: #f4f7fc; --panel2: #e7eef8; --grid: #d7e0ee;
+    --ink: #0e2148; --dim: #5d6b85; --accent: #16336e;
+    --green: #1a9d6b; --red: #d1453b; --blue: #2f6fb3; --amber: #b5791f;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: 'Spline Sans Mono', monospace;
+    min-height: 100vh; padding: 28px; max-width: 1180px; margin: 0 auto;
+    background-image: radial-gradient(circle at 18% 0%, rgba(22,51,110,0.06), transparent 42%);
+  }
+  .nav-link { font-size: 10px; color: var(--dim); text-decoration: none; letter-spacing: 0.08em;
+    text-transform: uppercase; transition: color 0.15s; display: inline-block; margin-bottom: 7px; }
+  .nav-link:hover { color: var(--accent); }
+  h1 { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800;
+       font-size: 30px; letter-spacing: -0.02em; line-height: 1; }
+  h1 .sub { display: block; font-size: 11px; font-weight: 400; color: var(--dim);
+            letter-spacing: 0.08em; margin-top: 7px; text-transform: uppercase; }
+  header { display: flex; justify-content: space-between; align-items: flex-end;
+           flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+  .status-line { font-size: 10.5px; color: var(--dim); text-align: right; line-height: 1.8; }
+
+  .panel { background: var(--panel); border: 1px solid var(--grid);
+           border-radius: 14px; padding: 16px 20px; margin-bottom: 18px; }
+  .panel-title { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800;
+                 font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em;
+                 color: var(--accent); margin-bottom: 12px; }
+
+  /* stance banner */
+  .stance-wrap { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
+  .stance { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 26px;
+            padding: 8px 18px; border-radius: 12px; letter-spacing: -0.01em; }
+  .stance.rotate { background: rgba(26,157,107,0.18); color: #15724e; }
+  .stance.concentrate { background: rgba(181,121,31,0.18); color: #8a5c16; }
+  .stance.neutral { background: rgba(47,111,179,0.16); color: #245585; }
+  .score { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 40px; line-height: 1; }
+  .score.pos { color: var(--green); } .score.neg { color: var(--red); } .score.zero { color: var(--dim); }
+  .score .lbl { display: block; font-size: 10px; font-weight: 400; color: var(--dim);
+                letter-spacing: 0.08em; text-transform: uppercase; margin-top: 4px; }
+  .meta { font-size: 11.5px; color: var(--dim); line-height: 1.8; }
+  .meta b { color: var(--ink); }
+
+  button { font-family: inherit; font-size: 11px; font-weight: 600; padding: 7px 14px;
+           border: none; border-radius: 8px; background: var(--accent); color: #fff;
+           cursor: pointer; letter-spacing: 0.04em; }
+  button:hover { background: #0e2148; } button:disabled { opacity: 0.5; cursor: default; }
+
+  /* brief markdown */
+  .brief { font-size: 13px; line-height: 1.66; }
+  .brief h3 { font-family: 'Bricolage Grotesque', sans-serif; font-size: 13px; text-transform: uppercase;
+              letter-spacing: 0.05em; color: var(--accent); margin: 14px 0 5px; }
+  .brief p { margin: 7px 0; } .brief ul { margin: 6px 0 6px 20px; } .brief li { margin: 3px 0; }
+  .brief b, .brief strong { color: var(--ink); font-weight: 600; }
+  .brief em { color: var(--dim); font-style: italic; }
+
+  .event { background: rgba(181,121,31,0.13); border: 1px solid rgba(181,121,31,0.4);
+           color: #8a5c16; border-radius: 10px; padding: 9px 14px; font-size: 12px; margin-bottom: 18px; }
+
+  /* confluence chips */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font-size: 11.5px; padding: 5px 11px; border-radius: 999px; font-weight: 600; }
+  .chip.long { background: rgba(26,157,107,0.16); color: #15724e; }
+  .chip.avoid { background: rgba(209,69,59,0.15); color: #a3322a; }
+  .chip .x { font-weight: 400; color: var(--dim); margin-left: 4px; }
+  .chip.agree::before { content: "★ "; color: var(--amber); }
+
+  /* vote cards */
+  .votes { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 12px; }
+  .vote { border: 1px solid var(--grid); border-radius: 11px; padding: 12px 14px; background: #fff; }
+  .vote.off { opacity: 0.55; }
+  .vote .top { display: flex; align-items: baseline; justify-content: space-between; }
+  .vote .dom { font-weight: 800; color: var(--accent); text-transform: uppercase; font-size: 12px;
+               letter-spacing: 0.04em; }
+  .vote .arrow { font-size: 15px; font-weight: 800; }
+  .arrow.pos { color: var(--green); } .arrow.neg { color: var(--red); } .arrow.zero { color: var(--dim); }
+  .vote .sub { font-size: 10px; color: var(--dim); margin-top: 1px; }
+  .bar { height: 5px; background: var(--grid); border-radius: 3px; margin: 8px 0 7px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 3px; }
+  .bar > i.pos { background: var(--green); } .bar > i.neg { background: var(--red); } .bar > i.zero { background: var(--dim); }
+  .vote .rat { font-size: 11px; color: var(--ink); line-height: 1.5; }
+  .vote .facs { font-size: 10px; color: var(--dim); margin-top: 6px; line-height: 1.5; }
+
+  .empty { color: var(--dim); text-align: center; padding: 28px; font-size: 12px; }
+  .note { font-size: 10px; color: var(--dim); line-height: 1.7; margin-top: 10px; }
+  .note b { color: var(--ink); }
+  footer { margin-top: 22px; font-size: 10px; color: var(--dim); text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <nav>
+      <a href="/" class="nav-link">← Home</a>
+      <a href="/rrg.html" class="nav-link" style="margin-left:14px">RRG →</a>
+      <a href="/breadth.html" class="nav-link" style="margin-left:14px">Breadth →</a>
+      <a href="/canslim.html" class="nav-link" style="margin-left:14px">CANSLIM →</a>
+      <a href="/news.html" class="nav-link" style="margin-left:14px">News →</a>
+      <a href="/flow.html" class="nav-link" style="margin-left:14px">Flow →</a>
+    </nav>
+    <h1>Harness<span class="sub">AI subagents per domain → one confluence brief · math decides, Claude explains</span></h1>
+  </div>
+  <div class="status-line" id="status">loading…</div>
+</header>
+
+<div class="panel">
+  <div class="stance-wrap">
+    <div class="stance neutral" id="stance">—</div>
+    <div class="score zero" id="score">·<span class="lbl">composite</span></div>
+    <div class="meta" id="meta"></div>
+    <div style="margin-left:auto"><button id="regen">↻ Regenerate brief</button></div>
+  </div>
+</div>
+
+<div id="eventRisk"></div>
+
+<div class="panel">
+  <div class="panel-title">The Brief</div>
+  <div class="brief" id="brief"><span class="empty">loading…</span></div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Confluence — Longs / Avoids</div>
+  <div class="chips" id="confluence"><span class="empty">—</span></div>
+  <div class="note">★ = the sector's RRG call and RS rank agree (cross-domain confluence). Longs/avoids are
+    the sector ETFs RRG and rankings share; CANSLIM growth leaders and whale flow appear in the vote cards below.</div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Domain Votes</div>
+  <div class="votes" id="votes"><span class="empty">loading…</span></div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">How to read this</div>
+  <div class="note" id="caveats"></div>
+</div>
+
+<footer>Market Intelligence Harness · the harness synthesizes eight domain votes; the decision is a deterministic, backtestable combiner.</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => (s == null ? "" : String(s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+// minimal markdown → html (headers, bold, italics, lists, paragraphs)
+function md(t) {
+  const lines = (t || "").split("\n"); let out = [], inList = false;
+  const close = () => { if (inList) { out.push("</ul>"); inList = false; } };
+  for (let raw of lines) {
+    let l = esc(raw.trim());
+    if (!l) { close(); continue; }
+    l = l.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^_])_([^_]+)_(?=[^_]|$)/g, "$1<em>$2</em>");
+    let h = l.match(/^#{1,4}\s+(.*)/);
+    if (h) { close(); out.push("<h3>" + h[1] + "</h3>"); continue; }
+    let li = l.match(/^(?:[-*]|\d+\.)\s+(.*)/);
+    if (li) { if (!inList) { out.push("<ul>"); inList = true; } out.push("<li>" + li[1] + "</li>"); continue; }
+    close(); out.push("<p>" + l + "</p>");
+  }
+  close(); return out.join("");
+}
+
+const arrowCls = d => d > 0 ? "pos" : d < 0 ? "neg" : "zero";
+const arrowCh  = d => d > 0 ? "▲" : d < 0 ? "▼" : "·";
+
+function render(p) {
+  const c = p.combined;
+  const st = (c.stance || "NEUTRAL").toLowerCase();
+  $("stance").className = "stance " + st; $("stance").textContent = c.stance;
+  const sc = $("score");
+  sc.className = "score " + (c.score > 0 ? "pos" : c.score < 0 ? "neg" : "zero");
+  sc.innerHTML = (c.score > 0 ? "+" : "") + Math.round(c.score) + '<span class="lbl">composite · ' + esc(c.posture) + '</span>';
+  $("meta").innerHTML = `regime <b>${esc(c.regime || "—")}</b> · rotation <b>${esc(c.rotation || "—")}</b><br>`
+    + `${c.n_votes} of ${p.votes.length} modules voting · drivers: `
+    + (c.factors.slice(0,4).map(f => `${esc(f[0])} ${f[1] > 0 ? "+" : ""}${Math.round(f[1])}`).join(", ") || "—");
+
+  $("status").innerHTML = `${esc(p.date)} · ${esc(p.generated_at || "")}<br>`
+    + (p.llm_used ? "Claude narration (subscription)" : (p.llm_available ? "template brief" : "LLM unavailable — template brief"));
+
+  // event risk strip
+  const news = p.votes.find(v => v.domain === "news" && v.ok);
+  $("eventRisk").innerHTML = (news && news.detail && news.detail.flag)
+    ? `<div class="event">⚠️ ${esc(news.detail.note)}</div>` : "";
+
+  $("brief").innerHTML = md(p.brief);
+
+  // confluence chips
+  const chips = [];
+  (c.longs || []).forEach(x => chips.push(`<span class="chip long ${x.agree ? "agree" : ""}">${esc(x.ticker)}
+    <span class="x">${esc(x.call)}${x.rank != null ? " · rk " + x.rank : ""}</span></span>`));
+  (c.avoids || []).forEach(x => chips.push(`<span class="chip avoid">${esc(x.ticker)}
+    <span class="x">${esc(x.call)}</span></span>`));
+  $("confluence").innerHTML = chips.length ? chips.join("") : '<span class="empty">no clear sector confluence</span>';
+
+  // vote cards
+  $("votes").innerHTML = p.votes.map(v => {
+    const conv = Math.max(0, Math.min(100, v.conviction || 0));
+    const facs = (v.factors || []).map(f => esc(f[0])).slice(0,4).join(" · ");
+    return `<div class="vote ${v.ok ? "" : "off"}">
+      <div class="top">
+        <span class="dom">${esc(v.domain)}</span>
+        <span class="arrow ${arrowCls(v.direction)}">${arrowCh(v.direction)} ${v.direction>0?"+":""}${v.direction}</span>
+      </div>
+      <div class="sub">conviction ${v.conviction} · weight ${v.weight} · ${esc(v.horizon)}</div>
+      <div class="bar"><i class="${arrowCls(v.direction)}" style="width:${conv}%"></i></div>
+      <div class="rat">${esc(v.rationale || "")}</div>
+      ${facs ? `<div class="facs">${facs}</div>` : ""}
+    </div>`;
+  }).join("");
+
+  $("caveats").innerHTML = (p.caveats || []).map(c => "• " + esc(c)).join("<br>");
+}
+
+async function load(force) {
+  try {
+    const r = force
+      ? await fetch("/api/harness/run", { method: "POST" })
+      : await fetch("/api/harness");
+    render(await r.json());
+  } catch (e) {
+    $("brief").innerHTML = '<span class="empty">failed to load: ' + esc(e) + '</span>';
+  } finally {
+    $("regen").disabled = false; $("regen").textContent = "↻ Regenerate brief";
+  }
+}
+
+$("regen").onclick = () => { $("regen").disabled = true; $("regen").textContent = "synthesizing…"; load(true); };
+load(false);
+</script>
+</body>
+</html>

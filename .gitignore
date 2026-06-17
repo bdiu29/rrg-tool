@@ -24,3 +24,5 @@ modules/themes/data/
 modules/flow/data/
 # News module local data store
 modules/news/data/
+# Harness module local data store (cached daily briefs)
+modules/harness/data/
