@@ -1,9 +1,10 @@
 """
 Harness CLI — print today's market brief from the terminal.
 
-    /usr/bin/python3 -m modules.harness.cli          # deterministic, no LLM ($0)
-    /usr/bin/python3 -m modules.harness.cli --llm     # add Claude narration (subscription)
-    /usr/bin/python3 -m modules.harness.cli --json     # raw payload
+    /usr/bin/python3 -m modules.harness.cli              # deterministic brief, no LLM ($0)
+    /usr/bin/python3 -m modules.harness.cli --llm         # add Claude narration (subscription)
+    /usr/bin/python3 -m modules.harness.cli --json        # raw payload
+    /usr/bin/python3 -m modules.harness.cli --backtest    # the referee: A/B harness vs RRG vs beta
 
 Same code path as GET /api/harness. No-LLM by default so it's free and fast.
 """
@@ -18,6 +19,13 @@ def main(argv=None):
     argv = argv if argv is not None else sys.argv[1:]
     use_llm  = "--llm" in argv
     as_json  = "--json" in argv
+
+    if "--backtest" in argv:
+        from modules.harness import backtest
+        rep = backtest.run_harness_backtest()
+        print(json.dumps(rep, indent=2, default=str) if as_json
+              else backtest.format_report(rep))
+        return
 
     payload = build_brief(llm=use_llm)
 

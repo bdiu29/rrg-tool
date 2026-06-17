@@ -167,8 +167,29 @@ def _handle_run(req):
         return Response.error(str(e))
 
 
+def _handle_backtest(req):
+    """The referee (Phase 2) — A/B the harness confluence decision vs raw RRG vs beta
+    over history. Synchronous (sector daily ~4s); the LLM plays no part."""
+    try:
+        body = req.json_body() or {}
+    except Exception:
+        body = {}
+    try:
+        from modules.harness import backtest
+        rep = backtest.run_harness_backtest(
+            interval=body.get("interval", "1d"),
+            universe=body.get("universe"),
+            benchmark=body.get("benchmark"),
+            portfolio=body.get("portfolio"),
+        )
+        return Response.json(rep)
+    except Exception as e:
+        return Response.error(f"backtest failed: {e}", 500)
+
+
 def register_routes(router):
-    router.get("/harness.html",        _handle_page)
-    router.get("/api/harness",         _handle_api)
-    router.get("/api/harness/summary", _handle_summary)
-    router.post("/api/harness/run",    _handle_run)
+    router.get("/harness.html",         _handle_page)
+    router.get("/api/harness",          _handle_api)
+    router.get("/api/harness/summary",  _handle_summary)
+    router.post("/api/harness/run",     _handle_run)
+    router.post("/api/harness/backtest", _handle_backtest)

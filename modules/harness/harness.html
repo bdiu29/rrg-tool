@@ -89,6 +89,21 @@
   .vote .rat { font-size: 11px; color: var(--ink); line-height: 1.5; }
   .vote .facs { font-size: 10px; color: var(--dim); margin-top: 6px; line-height: 1.5; }
 
+  /* referee A/B table */
+  .ab { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+  .ab th { text-align: right; font-weight: 600; color: var(--dim); font-size: 9.5px;
+           text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 8px;
+           border-bottom: 1px solid var(--grid); }
+  .ab th.l, .ab td.l { text-align: left; }
+  .ab td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--grid); }
+  .ab td.l { font-weight: 600; color: var(--accent); }
+  .ab tr.harness td.l { color: var(--green); }
+  .ab .pos { color: var(--green); } .ab .neg { color: var(--red); }
+  .ab-sub { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.05em;
+            color: var(--dim); margin: 14px 0 2px; }
+  .verdict { background: var(--panel2); border-left: 3px solid var(--accent);
+             border-radius: 7px; padding: 10px 14px; font-size: 12.5px; line-height: 1.55;
+             margin: 14px 0; color: var(--ink); }
   .empty { color: var(--dim); text-align: center; padding: 28px; font-size: 12px; }
   .note { font-size: 10px; color: var(--dim); line-height: 1.7; margin-top: 10px; }
   .note b { color: var(--ink); }
@@ -138,6 +153,14 @@
 <div class="panel">
   <div class="panel-title">Domain Votes</div>
   <div class="votes" id="votes"><span class="empty">loading…</span></div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Referee — does the confluence decision beat beta?</div>
+  <div class="meta" style="margin-bottom:10px">Replays the <b>deterministic combiner</b> over history and A/B's the harness confluence
+    call vs raw RRG vs benchmark-matched. Point-in-time subset (breadth regime + RRG + RS rank + rotation gate); the LLM plays no part.</div>
+  <button id="runBt">▶ Run referee (~4s)</button>
+  <div id="btResult" style="margin-top:14px"></div>
 </div>
 
 <div class="panel">
@@ -234,6 +257,63 @@ async function load(force) {
 
 $("regen").onclick = () => { $("regen").disabled = true; $("regen").textContent = "synthesizing…"; load(true); };
 load(false);
+
+// --- Referee (Phase 2) ---
+const num = (v, suf = "") => v == null ? "—" : `<span class="${v >= 0 ? "pos" : "neg"}">${v >= 0 ? "+" : ""}${v}${suf}</span>`;
+const plain = v => v == null ? "—" : v;
+
+function eqRow(label, e, cls = "") {
+  if (!e) return `<tr class="${cls}"><td class="l">${label}</td><td colspan="4">no trades</td></tr>`;
+  return `<tr class="${cls}"><td class="l">${label}</td><td>${num(e.total_return, "%")}</td>
+    <td>${num(e.max_drawdown, "%")}</td><td>${plain(e.sharpe)}</td><td>${plain(e.time_in_market)}%</td></tr>`;
+}
+function hedRow(label, h, cls = "") {
+  if (!h) return `<tr class="${cls}"><td class="l">${label}</td><td colspan="3">no book</td></tr>`;
+  return `<tr class="${cls}"><td class="l">${label}</td><td>${num(h.hedged_return, "%")}</td>
+    <td>${num(h.max_drawdown, "%")}</td><td>${plain(h.sharpe)}</td></tr>`;
+}
+
+function renderBacktest(rep) {
+  if (rep.error) { $("btResult").innerHTML = `<span class="empty">${esc(rep.error)}</span>`; return; }
+  const c = rep.config, ab = rep.ab, lo = ab.long_only, ie = ab.event_in_excess_10d, oe = ab.event_out_excess_10d;
+  let h = `<div class="meta">${esc(c.universe_label)} · ${esc(c.interval)} · ${esc(c.start)}→${esc(c.end)} · vs ${esc(c.benchmark_label)} · ${c.n_tickers} tickers</div>`;
+
+  h += `<div class="ab-sub">Long-only trade sim (enter ROTATE IN, exit ROTATE OUT)</div>`;
+  h += `<table class="ab"><tr><th class="l">Strategy</th><th>Return</th><th>Max DD</th><th>Sharpe</th><th>In-mkt</th></tr>`;
+  h += eqRow("Harness confluence", lo.harness, "harness");
+  h += eqRow("Raw RRG", lo.rrg);
+  h += `<tr><td class="l" style="color:var(--dim)">Benchmark (matched)</td><td>${num(lo.benchmark_matched, "%")}</td>
+    <td colspan="3" style="color:var(--dim)">full ${plain(lo.benchmark_full)}%</td></tr></table>`;
+
+  h += `<div class="ab-sub">Long-hedged rotation portfolio (long − benchmark = the relative edge)</div>`;
+  h += `<table class="ab"><tr><th class="l">Strategy</th><th>Long−Bench</th><th>Max DD</th><th>Sharpe</th></tr>`;
+  h += hedRow("Harness confluence", ab.hedged.harness, "harness");
+  h += hedRow("Raw RRG", ab.hedged.rrg) + `</table>`;
+
+  h += `<div class="ab-sub">Event study — forward excess vs benchmark @ +10d</div>`;
+  h += `<table class="ab"><tr><th class="l">Call</th><th>Harness</th><th>Raw RRG</th></tr>`;
+  h += `<tr><td class="l">ROTATE IN</td><td>${num(ie.harness, "%")} <span style="color:var(--dim)">n${plain(ie.harness_n)}</span></td>
+    <td>${num(ie.rrg, "%")} <span style="color:var(--dim)">n${plain(ie.rrg_n)}</span></td></tr>`;
+  h += `<tr><td class="l">ROTATE OUT</td><td>${num(oe.harness, "%")}</td><td>${num(oe.rrg, "%")}</td></tr></table>`;
+
+  h += `<div class="verdict"><b>Verdict:</b> ${esc(ab.verdict)}</div>`;
+  h += `<div class="note">${(rep.caveats || []).map(x => "• " + esc(x)).join("<br>")}</div>`;
+  $("btResult").innerHTML = h;
+}
+
+$("runBt").onclick = async () => {
+  $("runBt").disabled = true; $("runBt").textContent = "running referee…";
+  $("btResult").innerHTML = '<span class="empty">replaying history…</span>';
+  try {
+    const r = await fetch("/api/harness/backtest", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: "{}" });
+    renderBacktest(await r.json());
+  } catch (e) {
+    $("btResult").innerHTML = '<span class="empty">failed: ' + esc(e) + '</span>';
+  } finally {
+    $("runBt").disabled = false; $("runBt").textContent = "▶ Run referee (~4s)";
+  }
+};
 </script>
 </body>
 </html>

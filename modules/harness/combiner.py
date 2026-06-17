@@ -121,42 +121,52 @@ _RRG_BULL = {"ROTATE IN", "HOLD", "⚠️ w3 extended", "⚠️ w5 extended"}
 _RRG_BEAR = {"ROTATE OUT", "AVOID"}
 
 
-def _sector_confluence(votes):
-    """Cross-domain confluence on the SECTOR ETFs — the one scope RRG and rankings
-    share directly (same XL* tickers), so it needs no fragile stock→sector mapping.
-    A sector that RRG calls bullish AND rankings ranks highly is a high-confluence
-    long; the mirror is an avoid. Score = RRG signed conviction + a rank tilt
-    (rank−50), and a sector seen by BOTH domains gets an agreement bonus so
-    confluence outranks a lone signal."""
-    rrg  = _detail(votes, "rrg")
-    rank = _detail(votes, "rankings")
-    if not rrg:
-        return [], []
+def score_sectors(rrg_rows, rank_by, stance=None):
+    """Per-sector confluence score — the SINGLE SOURCE OF TRUTH for both the live
+    brief's longs/avoids (`_sector_confluence`) and the Phase-2 backtest's per-date
+    confluence call (`harness.backtest`). On the SECTOR ETFs, the one scope RRG and
+    rankings share directly (same XL* tickers — no fragile stock→sector mapping):
 
-    rank_by = {s["ticker"]: s.get("rank") for s in (rank.get("sectors") or [])
-               if s.get("rank") is not None}
+      score = RRG signed conviction (× the regime stance's rotation suppression)
+            + a rank tilt (rank−50)
+            ×1.25 if the RRG tilt and the rank tilt AGREE (confluence > a lone signal).
 
+    `stance=None` ⇒ no rotation suppression (the live default — behavior unchanged);
+    the backtest passes the per-date stance so CONCENTRATE halves the RRG rotation bet
+    (the validated finding), exactly as the composite combiner does."""
+    rrg_factor = _stance_factor("rrg", stance) if stance else 1.0
     scored = []
-    for s in (rrg.get("sectors") or []):
+    for s in (rrg_rows or []):
         t    = s.get("ticker")
         call = s.get("call")
         conv = float(s.get("conviction") or 0.0)
         sign = 1 if call in _RRG_BULL else (-1 if call in _RRG_BEAR else 0)
-        score = sign * conv
+        score = sign * conv * rrg_factor
         agree = False
-        if t in rank_by:
-            rk = rank_by[t]
+        rk = rank_by.get(t)
+        if rk is not None:
             score += (rk - 50) * 0.6          # above-median rank = positive tilt
-            # agreement: RRG tilt and rank tilt point the same way
-            if sign != 0 and (sign > 0) == (rk >= 50):
+            if sign != 0 and (sign > 0) == (rk >= 50):   # RRG + rank point the same way
                 score *= 1.25
                 agree = True
         scored.append({
             "ticker": t, "name": s.get("name"), "call": call,
-            "conviction": round(conv, 1), "rank": rank_by.get(t),
+            "conviction": round(conv, 1), "rank": rk,
             "score": round(score, 1), "agree": agree,
         })
+    return scored
 
+
+def _sector_confluence(votes):
+    """Live-path longs/avoids from the vote details (no stance suppression — the v1
+    behavior; the composite already carries the regime tilt)."""
+    rrg  = _detail(votes, "rrg")
+    rank = _detail(votes, "rankings")
+    if not rrg:
+        return [], []
+    rank_by = {s["ticker"]: s.get("rank") for s in (rank.get("sectors") or [])
+               if s.get("rank") is not None}
+    scored = score_sectors(rrg.get("sectors") or [], rank_by)
     longs  = [x for x in sorted(scored, key=lambda x: x["score"], reverse=True)
               if x["score"] > 0][:5]
     avoids = [x for x in sorted(scored, key=lambda x: x["score"])
