@@ -286,7 +286,9 @@
       <a href="/schwab.html" class="nav-link" style="margin-left:14px">Schwab →</a>
       <a href="/screener.html" class="nav-link" style="margin-left:14px">Screener →</a>
       <a href="/rankings.html" class="nav-link" style="margin-left:14px">Rankings →</a>
+      <a href="/canslim.html" class="nav-link" style="margin-left:14px">CANSLIM →</a>
       <a href="/themes.html" class="nav-link" style="margin-left:14px">Themes →</a>
+      <a href="/news.html" class="nav-link" style="margin-left:14px">News →</a>
     </div>
     <h1>Market Breadth<span class="sub">Participation vs <span id="index-sym">—</span> · regime &amp; divergences</span></h1>
   </div>
@@ -337,6 +339,27 @@
     </div>
   </div>
 </header>
+
+<!-- Macro event-risk overlay (fail-soft; from the news module) -->
+<a id="news-risk" href="/news.html" style="display:none;text-decoration:none"></a>
+<script>
+(async function loadNewsRisk() {
+  const el = document.getElementById('news-risk');
+  try {
+    const r = await fetch('/api/news/event-risk');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    if (!d.event) return;
+    const risk = !!d.flag;
+    el.textContent = '⚑ Next macro event: ' + d.note;
+    el.style.cssText = 'display:block;margin:0 0 16px;padding:11px 15px;border-radius:10px;'
+      + 'font-size:12.5px;text-decoration:none;border:1px solid '
+      + (risk ? 'rgba(184,134,11,0.4)' : '#d7e0ee') + ';background:'
+      + (risk ? 'rgba(184,134,11,0.12)' : '#f4f7fc') + ';color:'
+      + (risk ? '#7a5a08' : '#0e2148');
+  } catch {}
+})();
+</script>
 
 <div class="tabs">
   <button data-view="dashboard" class="active">Dashboard</button>

@@ -2,7 +2,8 @@
 Home module — hub homepage linking every module, with live status badges.
 
 Routes registered:
-  GET / → index.html
+  GET /           → index.html (hub homepage)
+  GET /index.html → index.html (conventional alias for the hub)
 """
 
 from pathlib import Path
@@ -19,3 +20,4 @@ def _handle_index(req):
 
 def register_routes(router):
     router.get("/", _handle_index)
+    router.get("/index.html", _handle_index)

@@ -20,6 +20,8 @@ from modules.screener import register_routes as register_screener
 from modules.rankings import register_routes as register_rankings
 from modules.themes import register_routes as register_themes
 from modules.flow import register_routes as register_flow
+from modules.canslim import register_routes as register_canslim
+from modules.news import register_routes as register_news
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +79,8 @@ register_screener(router)
 register_rankings(router)
 register_themes(router)
 register_flow(router)
+register_canslim(router)
+register_news(router)
 
 
 # ---------------------------------------------------------------------------
@@ -86,11 +90,17 @@ register_flow(router)
 class Handler(BaseHTTPRequestHandler):
     def _respond(self, resp):
         body = resp.body.encode("utf-8") if isinstance(resp.body, str) else resp.body
-        self.send_response(resp.status)
-        self.send_header("Content-Type", resp.content_type)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(resp.status)
+            self.send_header("Content-Type", resp.content_type)
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(body)
+        except ConnectionError:
+            # Client hung up before we finished replying (refresh, navigation, or a
+            # canceled in-flight fetch). There's no socket left to answer — drop it
+            # quietly instead of letting the error path double-fault on a dead pipe.
+            pass
 
     def log_message(self, fmt, *args):
         pass  # quiet

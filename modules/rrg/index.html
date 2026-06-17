@@ -360,12 +360,21 @@
     background: var(--panel); border: 1px solid var(--grid);
     border-radius: 14px; padding: 18px 22px; margin-top: 20px;
   }
-  .bars-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+  .bars-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 14px; flex-wrap: wrap; }
   .bars-head h2 {
     font-family:'Bricolage Grotesque',sans-serif; font-size:13px;
     text-transform:uppercase; letter-spacing:0.12em; color:var(--dim); font-weight:600;
   }
   .bars-head .bars-date { font-size: 12px; color: #4d5663; }
+  .bars-ctl { display: flex; flex-direction: column; gap: 3px; }
+  .bars-ctl .slider { margin: 2px 0 0; }
+  .bars-mode { display: inline-flex; background: var(--panel); border: 1px solid var(--grid); border-radius: 8px; overflow: hidden; }
+  .bars-mode button {
+    background: transparent; border: none; color: var(--dim); font-family: inherit;
+    font-size: 12px; font-weight: 500; padding: 6px 13px; cursor: pointer; transition: all 0.15s ease;
+  }
+  .bars-mode button.active { background: var(--accent); color: #0a0e14; font-weight: 600; }
+  .bars-hint { font-size: 11px; color: var(--dim); line-height: 1.5; margin: -2px 0 14px; }
 
   .bar-row { display:grid; grid-template-columns:50px 1fr 64px; align-items:center; gap:14px; margin-bottom:8px; }
   .bar-label { font-size:13px; font-weight:700; text-align:left; }
@@ -396,6 +405,9 @@
   .bt-head h2 { font-family:'Bricolage Grotesque',sans-serif; font-size:15px; text-transform:uppercase; letter-spacing:0.1em; color:var(--ink); font-weight:600; }
   .bt-controls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .bt-controls select { background:var(--bg); color:var(--ink); border:1px solid var(--grid); border-radius:7px; padding:6px 9px; font-family:inherit; font-size:11px; }
+  .bt-controls input[type=number] { background:var(--bg); color:var(--ink); border:1px solid var(--grid); border-radius:7px; padding:6px 4px; font-family:inherit; font-size:11px; width:40px; text-align:center; }
+  .bt-gate { display:flex; align-items:center; gap:4px; font-size:10px; color:var(--dim); cursor:pointer; user-select:none; }
+  .bt-gate input { accent-color:var(--accent); }
   .bt-btn { background:var(--accent); color:#1a1205; border:none; border-radius:7px; padding:6px 13px; font-family:inherit; font-size:11px; font-weight:700; cursor:pointer; letter-spacing:0.03em; }
   .bt-btn.ghost { background:transparent; color:var(--dim); border:1px solid var(--grid); }
   .bt-btn:disabled { opacity:0.5; cursor:default; }
@@ -429,6 +441,7 @@
         <a href="/schwab.html" class="nav-link" style="margin-left:14px">Schwab →</a>
         <a href="/screener.html" class="nav-link" style="margin-left:14px">Screener →</a>
         <a href="/rankings.html" class="nav-link" style="margin-left:14px">Rankings →</a>
+        <a href="/canslim.html" class="nav-link" style="margin-left:14px">CANSLIM →</a>
         <a href="/themes.html" class="nav-link" style="margin-left:14px">Themes →</a>
       </div>
       <h1>Relative Rotation Graph<span class="sub">Sector rotation vs <span id="bench">SPY</span></span></h1>
@@ -491,11 +504,20 @@
   <div class="bars-panel" id="bars-panel">
     <div class="bars-head">
       <h2 id="bars-title">Today vs SPY</h2>
-      <div style="display:flex; align-items:center; gap:12px;">
+      <div style="display:flex; align-items:center; gap:16px;">
+        <div class="bars-mode" id="bars-mode">
+          <button data-mode="level" class="active" title="Relative position vs SPY over the window">Level</button>
+          <button data-mode="delta" title="Acceleration — is the outperformance speeding up or rolling over">Δ</button>
+        </div>
+        <div class="bars-ctl">
+          <span class="ctl-label">Lookback · <span id="lookback-val">1</span> <span id="lookback-unit">day</span></span>
+          <input type="range" id="lookback-slider" class="slider" min="1" max="30" step="1" value="1" style="width:120px">
+        </div>
         <span class="bars-date" id="bars-date"></span>
         <button class="copy-btn" id="copy-bars">Copy</button>
       </div>
     </div>
+    <div class="bars-hint" id="bars-hint" style="display:none"></div>
     <div id="bars"></div>
   </div>
 
@@ -536,6 +558,15 @@
           <option value="hold">Hold 10 bars</option>
           <option value="atr">ATR 2×/3×</option>
         </select>
+        <select id="bt-pmode" title="Rotation portfolio: which legs">
+          <option value="long_short">L/S top-N (short sectors)</option>
+          <option value="long_hedged">Long − SPY (beta-hedged)</option>
+          <option value="long_only">Long-only top-N</option>
+          <option value="short_only">Short-only top-N</option>
+        </select>
+        <input id="bt-nlong" type="number" min="1" max="11" value="3" title="# long names (top conviction ROTATE IN)">
+        <input id="bt-nshort" type="number" min="1" max="11" value="3" title="# short names (most-negative ROTATE OUT)">
+        <label class="bt-gate" title="Flatten the book when the rotation regime is off"><input id="bt-gate" type="checkbox" checked> gate</label>
         <button class="bt-btn" id="bt-run">Run ▸</button>
         <button class="bt-btn ghost" id="bt-wf">Walk-forward ▸</button>
         <button class="copy-btn" id="bt-copy" style="position:static">Copy MD</button>
@@ -567,6 +598,8 @@ const colorFor = (t) => SECTOR_COLORS[t] || '#7c8694';
 const NS = 'http://www.w3.org/2000/svg';
 let currentTF = 'daily';
 let currentTail = 6;
+let currentLookback = 1;  // bars-panel "vs SPY" window, in bars of the active interval
+let barsMode = 'level';   // bars-panel: 'level' (relative position) | 'delta' (acceleration)
 let currentAsof = null;   // 'YYYY-MM-DD' when rolled back, null = live
 let muted = new Set();
 let lastData = null;
@@ -857,19 +890,69 @@ function buildBanner(best) {
      </span>`;
 }
 
+// rel_hist[k] = a sector's excess return vs SPY over (k+1) trailing bars.
+// Level read: the relative move over the whole lb-bar window (lb=1 = "today").
+function relLevel(d, lb) {
+  const h = d.rel_hist;
+  if (h && h.length >= lb) return h[lb - 1];
+  return lb === 1 ? d.rel_pct : null;          // fallback for older payloads
+}
+// Δ / acceleration read: split the lb-bar window into two equal halves and
+// subtract the prior half's excess return from the recent half's. + = the
+// outperformance is speeding up (momentum turning first), − = rolling over.
+// The prior half is rel_hist's first difference — an additive approximation
+// that's exact enough for ranking/sign on these magnitudes.
+function relAccel(d, lb) {
+  const h = d.rel_hist, half = Math.floor(lb / 2);
+  if (half < 1 || !h || h.length < 2 * half) return null;
+  const recent = h[half - 1];
+  const older  = h[2 * half - 1] - h[half - 1];
+  return Math.round((recent - older) * 100) / 100;
+}
+
 function buildBars(data) {
   const s = data.sectors;
+
+  // Sync the lookback slider to this payload's available window. The full
+  // per-bar relative series ships in rel_hist, so both modes (and any window)
+  // render without a refetch.
+  const unit    = data.lookback_unit || 'day';
+  const maxLb   = data.max_lookback || 30;
+  const isDelta = barsMode === 'delta';
+  if (currentLookback > maxLb) currentLookback = maxLb;
+  if (currentLookback < 1) currentLookback = 1;
+  const lb = currentLookback;
+  const sl = $('lookback-slider');
+  sl.max = maxLb; sl.value = lb;
+  $('lookback-val').textContent = lb;
+  $('lookback-unit').textContent = unit + (lb === 1 ? '' : 's');
+
+  const valueOf = (d) => isDelta ? relAccel(d, lb) : relLevel(d, lb);
   const rows = Object.keys(s)
-    .map(k => ({ k, val: s[k].rel_pct }))
+    .map(k => ({ k, val: valueOf(s[k]) }))
     .filter(r => typeof r.val === 'number')
     .sort((a, b) => b.val - a.val);
 
-  $('bars-title').textContent =
-    data.timeframe === 'weekly' ? 'This Week vs SPY' : 'Today vs SPY';
+  $('bars-title').textContent = isDelta
+    ? `Δ Momentum vs SPY · ${lb}-${unit} window`
+    : (lb > 1 ? `Last ${lb} ${unit}s vs SPY`
+              : (unit === 'week' ? 'This Week vs SPY' : 'Today vs SPY'));
   $('bars-date').textContent = data.date || '';
+
+  const hint = $('bars-hint');
+  if (isDelta) {
+    hint.textContent = `Recent-half vs prior-half excess return over the ${lb}-${unit} window — green/right = outperformance accelerating, red/left = fading. Bar size = how fast it's turning.`;
+    hint.style.display = 'block';
+  } else {
+    hint.style.display = 'none';
+  }
 
   const wrap = $('bars');
   wrap.innerHTML = '';
+  if (isDelta && lb < 2) {
+    wrap.innerHTML = '<div style="color:var(--dim);font-size:12px">Δ needs at least a 2-bar window — widen the lookback.</div>';
+    return;
+  }
   if (!rows.length) {
     wrap.innerHTML = '<div style="color:var(--dim);font-size:12px">No data.</div>';
     return;
@@ -878,9 +961,13 @@ function buildBars(data) {
   const maxAbs = Math.max(0.1, ...rows.map(r => Math.abs(r.val)));
   rows.forEach((r, i) => {
     const pos = r.val >= 0;
-    const w = (Math.abs(r.val) / maxAbs) * 50;   // % of full track (half each side)
+    const mag = Math.abs(r.val) / maxAbs;        // 0..1 — biggest mover = 1
+    const w = mag * 50;                          // % of full track (half each side)
+    // Shade by magnitude: the biggest move is fully saturated, smaller moves fade
+    // (floored so they stay visible), so size AND color read how much each moved.
+    const shade = (0.4 + 0.6 * mag).toFixed(3);
     const delay = i * 45;
-    const barStyle = `${pos ? 'left:50%' : 'right:50%'};width:${w}%;animation-delay:${delay}ms`;
+    const barStyle = `${pos ? 'left:50%' : 'right:50%'};width:${w}%;opacity:${shade};animation-delay:${delay}ms`;
     const row = document.createElement('div');
     row.className = 'bar-row';
     row.innerHTML =
@@ -1027,6 +1114,28 @@ const slider = $('tail-slider');
 slider.addEventListener('input', () => { $('tail-val').textContent = slider.value; });
 slider.addEventListener('change', () => { currentTail = +slider.value; load(); });
 
+// Lookback slider (bars panel): the full per-bar relative series ships in the
+// payload, so changing the window just re-renders the bars — no refetch.
+const lbSlider = $('lookback-slider');
+lbSlider.addEventListener('input', () => { $('lookback-val').textContent = lbSlider.value; });
+lbSlider.addEventListener('change', () => {
+  currentLookback = +lbSlider.value;
+  if (lastData) buildBars(lastData);
+});
+
+// Bars mode toggle: Level (relative position vs SPY) ↔ Δ (acceleration — recent
+// vs prior half of the window). Re-render only, no refetch. A 1-bar window can't
+// be halved, so entering Δ from a tiny window bumps to a sensible default.
+document.querySelectorAll('#bars-mode button').forEach(b =>
+  b.addEventListener('click', () => {
+    barsMode = b.dataset.mode;
+    document.querySelectorAll('#bars-mode button')
+      .forEach(x => x.classList.toggle('active', x === b));
+    if (barsMode === 'delta' && currentLookback < 4)
+      currentLookback = Math.min((lastData && lastData.max_lookback) || 30, 10);
+    if (lastData) buildBars(lastData);
+  }));
+
 // ---- As-of date rollback ----
 // History is fixed (all windows are trailing), so rolling back only removes
 // head points — useful for comparing today's chart against an older reference.
@@ -1140,6 +1249,7 @@ $('copy-calls').addEventListener('click', (e) => copyWidget('calls-panel', e.cur
 // ---- Strategy backtest ----
 let btLast = null;
 const HZ = ['1', '5', '10', '20'];
+const RP_MODE = { long_short: 'Long/Short', long_hedged: 'Long−SPY', long_only: 'Long-only', short_only: 'Short-only' };
 const fmtPct  = (v) => v == null ? '—' : (v > 0 ? '+' : '') + (+v).toFixed(2) + '%';
 const signCls = (v) => v == null ? '' : (v > 0 ? 'pos' : (v < 0 ? 'neg' : ''));
 
@@ -1155,7 +1265,11 @@ async function runBacktest(walkForward) {
   try {
     const body = { timeframe: currentTF, tail: currentTail,
                    exit: { model: $('bt-exit').value }, universe: $('bt-universe').value,
-                   benchmark: $('bt-benchmark').value, walk_forward: !!walkForward };
+                   benchmark: $('bt-benchmark').value, walk_forward: !!walkForward,
+                   portfolio: { mode: $('bt-pmode').value,
+                                n_long:  Math.max(1, parseInt($('bt-nlong').value, 10)  || 3),
+                                n_short: Math.max(1, parseInt($('bt-nshort').value, 10) || 3),
+                                gate: $('bt-gate').checked } };
     const r = await fetch('/api/rrg/backtest', { method: 'POST', body: JSON.stringify(body) });
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || 'backtest failed');
@@ -1189,6 +1303,8 @@ function renderBacktest(d) {
   rep.style.display = 'block';
   const s = d.stats || {}, eq = d.equity || {}, es = d.event_study || {};
   const cfg = d.config || {};
+  const rp = d.rotation_portfolio;
+  const tp = d.tp_comparison;
 
   const bench = (cfg.benchmark || 'SPY');
   let html = '';
@@ -1276,6 +1392,51 @@ function renderBacktest(d) {
     html += `<div class="bt-note">${co.n_symbols} symbols traded. <b>Top 3 = ${co.top3_share == null ? '—' : co.top3_share + '%'}</b> and top 5 = ${co.top5_share == null ? '—' : co.top5_share + '%'} of the gross summed return — a high share means the curve leans on a few names (and watch for several correlated ETFs of the same theme). Σ return is the simple sum of a symbol's trade returns, not an exact P&L split.</div>`;
   }
 
+  // Rotation portfolio — the long/short top-N sim that monetizes the ranking edge.
+  if (rp) {
+    const pc = rp.config || {}, modeLabel = RP_MODE[pc.mode] || pc.mode;
+    html += `<div class="bt-section-title">Rotation portfolio — ${modeLabel} top-N (the ranking edge)</div>`;
+    html += '<div class="bt-summary">';
+    html += btStat(fmtPct(rp.total_return),  'Strategy',     'bt-v ' + signCls(rp.total_return));
+    html += btStat(fmtPct(rp.hedged_return), 'Long−SPY',     'bt-v ' + signCls(rp.hedged_return));
+    html += btStat(fmtPct(rp.spread_return), 'L−S spread',   'bt-v ' + signCls(rp.spread_return));
+    html += btStat(fmtPct(rp.long_return),   'Long leg',     'bt-v ' + signCls(rp.long_return));
+    html += btStat(fmtPct(rp.short_return),  'Short leg',    'bt-v ' + signCls(rp.short_return));
+    html += btStat(fmtPct(rp.bench_matched_return), bench + ' (matched)', 'bt-v ' + signCls(rp.bench_matched_return));
+    html += btStat(fmtPct(rp.max_drawdown),  'Max DD', 'bt-v neg');
+    html += btStat(rp.sharpe != null ? (+rp.sharpe).toFixed(2) : '—', 'Sharpe');
+    html += '</div>';
+    html += '<div class="bt-summary" style="margin-top:8px">';
+    html += btStat((rp.avg_n_long ?? '—') + ' / ' + (rp.avg_n_short ?? '—'), 'Avg long/short');
+    html += btStat(rp.time_in_market != null ? Math.round(rp.time_in_market) + '%' : '—', 'Time in mkt');
+    html += btStat(rp.avg_turnover != null ? rp.avg_turnover + '%' : '—', 'Turnover/bar');
+    html += btStat(rp.gated ? '🟢 on' : 'off', 'Regime gate');
+    html += '</div>';
+    html += `<div class="bt-note">Long the top ${pc.n_long} conviction ROTATE INs${rp.gated ? ', flat when rotation is off' : ''}, equal-weight, rebalanced as ranks/calls change. Two short constructions: <b>L−SPY (Long−SPY)</b> shorts the benchmark against the long book — the beta-hedged relative bet that matches the excess-vs-${bench} edge the call claims; <b>L−S spread</b> shorts the ${pc.n_short} most-negative ROTATE OUT sectors — market-neutral but it eats market beta on the short leg in a bull tape (a sector can lag ${bench} yet still rise). The long/short legs show where each comes from. Decision-at-close, no lookahead; trading costs not modelled (see turnover).</div>`;
+    html += '<div class="bt-section-title">Equity — rotation portfolio</div><div id="bt-rotation" class="bt-chart"></div>';
+  }
+
+  // Take-profit ladder comparison — same entries, four exit mechanics head-to-head.
+  if (tp && tp.rows && tp.rows.length) {
+    const best = tp.best || {};
+    const star = (k, key) => best[k] === key ? ' <span style="color:var(--accent)">★</span>' : '';
+    html += '<div class="bt-section-title">Take-profit ladder — same entries, four exits (which exit wins?)</div>';
+    html += '<table class="bt-table"><thead><tr><th>Exit strategy</th><th>Return</th><th>Max DD</th><th>Sharpe</th><th>Win</th><th>PF</th><th>Time in mkt</th><th>Bars held</th></tr></thead><tbody>';
+    tp.rows.forEach(r => {
+      html += `<tr><td>${r.label}</td>`
+            + `<td class="${signCls(r.total_return)}">${fmtPct(r.total_return)}${star('return', r.key)}</td>`
+            + `<td class="neg">${fmtPct(r.max_drawdown)}${star('drawdown', r.key)}</td>`
+            + `<td>${r.sharpe == null ? '—' : (+r.sharpe).toFixed(2)}${star('sharpe', r.key)}</td>`
+            + `<td>${r.win_rate == null ? '—' : Math.round(r.win_rate) + '%'}</td>`
+            + `<td>${r.profit_factor == null ? '—' : (+r.profit_factor).toFixed(2)}</td>`
+            + `<td>${r.time_in_market == null ? '—' : Math.round(r.time_in_market) + '%'}</td>`
+            + `<td>${r.avg_bars_held == null ? '—' : r.avg_bars_held}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    html += `<div class="bt-note">★ = best on that metric. ${tp.note || ''}</div>`;
+    html += '<div class="bt-section-title">Equity — take-profit ladders</div><div id="bt-tp" class="bt-chart"></div>';
+  }
+
   if (d.walk_forward) {
     const w = d.walk_forward;
     html += '<div class="bt-section-title">Walk-forward — recommended gate params</div>';
@@ -1317,6 +1478,27 @@ function renderBacktest(d) {
       { x: centers, y: h.counts, type: 'bar', marker: { color: '#4f9be8' } },
     ], plotlyLayout(false, 'Trade return %', 'Trades'), { displayModeBar: false, responsive: true });
   }
+  if (window.Plotly && rp && rp.dates) {
+    const modeLabel = RP_MODE[(rp.config || {}).mode] || 'Strategy';
+    Plotly.newPlot('bt-rotation', [
+      { x: rp.dates, y: rp.strategy,          name: 'Strategy (' + modeLabel + ')', mode: 'lines', line: { color: '#3ddc84', width: 2 } },
+      { x: rp.dates, y: rp.hedged,            name: 'Long − SPY (hedged)', mode: 'lines', line: { color: '#33c4c4', width: 1.5 } },
+      { x: rp.dates, y: rp.spread,            name: 'L−S spread',       mode: 'lines', line: { color: '#b98bff', width: 1.3 } },
+      { x: rp.dates, y: rp.long_only,         name: 'Long-only leg',    mode: 'lines', line: { color: '#4f9be8', width: 1.2, dash: 'dot' } },
+      { x: rp.dates, y: rp.benchmark_matched, name: bench + ' (matched)', mode: 'lines', line: { color: '#d9943a', width: 1.2 } },
+    ], plotlyLayout(true), { displayModeBar: false, responsive: true });
+  }
+  if (window.Plotly && tp && tp.overlay && tp.overlay.dates) {
+    const ov = tp.overlay;
+    const COL = { full: '#8b94a3', calls: '#3ddc84', post_out: '#4f9be8', fib: '#b98bff' };
+    const LBL = {}; tp.rows.forEach(r => LBL[r.key] = r.label);
+    const traces = Object.keys(ov.series).map(k => ({
+      x: ov.dates, y: ov.series[k], name: LBL[k] || k, mode: 'lines',
+      line: { color: COL[k] || '#ccc', width: k === 'full' ? 1.4 : 1.8, dash: k === 'full' ? 'dot' : 'solid' },
+    }));
+    if (ov.spy) traces.push({ x: ov.dates, y: ov.spy, name: bench + ' (always in)', mode: 'lines', line: { color: '#d9943a', width: 1, dash: 'dash' } });
+    Plotly.newPlot('bt-tp', traces, plotlyLayout(true), { displayModeBar: false, responsive: true });
+  }
 }
 
 function backtestMarkdown(d) {
@@ -1347,6 +1529,21 @@ function backtestMarkdown(d) {
     co.rows.slice(0, 10).forEach(r => {
       m += `| ${r.symbol} | ${r.n_trades} | ${fmtPct(r.total_return)} | ${fmtPct(r.avg_return)} | ${r.win_rate == null ? '—' : Math.round(r.win_rate) + '%'} |\n`;
     });
+  }
+  if (d.rotation_portfolio) {
+    const rp = d.rotation_portfolio, pc = rp.config || {};
+    m += `\n## Rotation portfolio — ${RP_MODE[pc.mode] || pc.mode} top-N (long ${pc.n_long} / short ${pc.n_short}, gate ${pc.gate ? 'on' : 'off'})\n\n`;
+    m += `strategy ${fmtPct(rp.total_return)} · Long−SPY hedged ${fmtPct(rp.hedged_return)} · L−S spread ${fmtPct(rp.spread_return)} · long ${fmtPct(rp.long_return)} · short ${fmtPct(rp.short_return)} · ${bench}-matched ${fmtPct(rp.bench_matched_return)}\n\n`;
+    m += `maxDD ${fmtPct(rp.max_drawdown)} · Sharpe ${rp.sharpe != null ? (+rp.sharpe).toFixed(2) : '—'} · avg long/short ${rp.avg_n_long}/${rp.avg_n_short} · time-in-mkt ${rp.time_in_market != null ? Math.round(rp.time_in_market) + '%' : '—'} · turnover/bar ${rp.avg_turnover != null ? rp.avg_turnover + '%' : '—'}\n`;
+  }
+  if (d.tp_comparison && d.tp_comparison.rows) {
+    const tp = d.tp_comparison, best = tp.best || {};
+    m += `\n## Take-profit ladder — same entries, four exits\n\n`;
+    m += `| Exit strategy | Return | Max DD | Sharpe | Win | PF | Time-in-mkt |\n|---|---|---|---|---|---|---|\n`;
+    tp.rows.forEach(r => {
+      m += `| ${r.label} | ${fmtPct(r.total_return)} | ${fmtPct(r.max_drawdown)} | ${r.sharpe == null ? '—' : (+r.sharpe).toFixed(2)} | ${r.win_rate == null ? '—' : Math.round(r.win_rate) + '%'} | ${r.profit_factor == null ? '—' : (+r.profit_factor).toFixed(2)} | ${r.time_in_market == null ? '—' : Math.round(r.time_in_market) + '%'} |\n`;
+    });
+    m += `\nBest — return: **${best.return || '—'}** · drawdown: **${best.drawdown || '—'}** · Sharpe: **${best.sharpe || '—'}**\n`;
   }
   if (d.walk_forward) {
     const w = d.walk_forward;

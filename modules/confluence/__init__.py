@@ -18,12 +18,16 @@ Current factors:
   * `flags`          — bull/bear flag continuation (price+volume)
   * `exhaustion`     — buyer/seller volume climax (topping/bottoming)
   * `volume_profile` — volume-at-price: POC / value area / HVN-LVN + profile shape
+  * `accumulation`   — U/D volume ratio + A/D-line divergence: institutional buy/sell footprint
+  * `institutional`  — institutional sponsorship (% held + holder-count QoQ trend) — CANSLIM "I"
+                       (ownership numbers in, not OHLCV; consumed by canslim, not RRG conviction)
 
 Adding a factor = drop a `<name>.py` exposing a pure `current(...)` read and a
 `contribution(read, ...) -> (signed_amount, label)`, then register it in `FACTORS`.
 """
 
-from modules.confluence import flags, exhaustion, volume_profile
+from modules.confluence import (flags, exhaustion, volume_profile, accumulation,
+                                institutional)
 
 # Registry of pure factors a combiner can discover/iterate. `contribution` turns a
 # factor's `current(...)` read into a signed amount (+bull / −bear) + a label, in the
@@ -32,6 +36,9 @@ from modules.confluence import flags, exhaustion, volume_profile
 # NOT here — they share one ZigZag pass and live with the wave engine.
 FACTORS = {
     "volume_profile": volume_profile,
+    "accumulation":   accumulation,
+    "institutional":  institutional,
 }
 
-__all__ = ["flags", "exhaustion", "volume_profile", "FACTORS"]
+__all__ = ["flags", "exhaustion", "volume_profile", "accumulation",
+           "institutional", "FACTORS"]

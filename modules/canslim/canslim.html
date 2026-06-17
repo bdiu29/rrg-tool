@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CANSLIM — Market Intelligence Harness</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #ffffff; --panel: #f4f7fc; --panel2: #e7eef8; --grid: #d7e0ee;
+    --ink: #0e2148; --dim: #5d6b85; --accent: #16336e;
+    --green: #1a9d6b; --red: #d1453b; --blue: #2f6fb3; --amber: #b5791f;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink); font-family: 'Spline Sans Mono', monospace;
+    min-height: 100vh; padding: 28px; max-width: 1280px; margin: 0 auto;
+    background-image: radial-gradient(circle at 18% 0%, rgba(22,51,110,0.06), transparent 42%);
+  }
+  .nav-link {
+    font-size: 10px; color: var(--dim); text-decoration: none; letter-spacing: 0.08em;
+    text-transform: uppercase; transition: color 0.15s; display: inline-block; margin-bottom: 7px;
+  }
+  .nav-link:hover { color: var(--accent); }
+  h1 { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800;
+       font-size: 30px; letter-spacing: -0.02em; line-height: 1; }
+  h1 .sub { display: block; font-size: 11px; font-weight: 400; color: var(--dim);
+            letter-spacing: 0.08em; margin-top: 7px; text-transform: uppercase; }
+  header { display: flex; justify-content: space-between; align-items: flex-end;
+           flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+  .status-line { font-size: 10.5px; color: var(--dim); text-align: right; line-height: 1.8; }
+
+  .panel { background: var(--panel); border: 1px solid var(--grid);
+           border-radius: 14px; padding: 16px 20px; margin-bottom: 18px; }
+  .panel-title { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800;
+                 font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em;
+                 color: var(--accent); margin-bottom: 12px; }
+
+  /* market banner */
+  .market { display: flex; align-items: center; gap: 16px; }
+  .market .pill { font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 999px;
+                  letter-spacing: 0.04em; }
+  .market .pill.healthy { background: rgba(26,157,107,0.18); color: #15724e; }
+  .market .pill.neutral { background: rgba(47,111,179,0.18); color: #245585; }
+  .market .pill.deteriorating { background: rgba(209,69,59,0.18); color: #a3322a; }
+  .market .pill.unknown { background: var(--grid); color: var(--dim); }
+  .market .desc { font-size: 11.5px; color: var(--dim); }
+
+  .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; flex-wrap: wrap; }
+  select { font-family: inherit; font-size: 12px; padding: 5px 9px; border: 1px solid var(--grid);
+           border-radius: 8px; background: #fff; color: var(--ink); }
+  label { font-size: 10.5px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: center; font-weight: 600; color: var(--dim); font-size: 9.5px;
+       text-transform: uppercase; letter-spacing: 0.05em; padding: 7px 5px;
+       border-bottom: 1px solid var(--grid); }
+  th.l, td.l { text-align: left; }
+  td { padding: 7px 5px; text-align: center; border-bottom: 1px solid var(--grid); }
+  tr:hover td { background: var(--panel2); }
+  .sym { font-weight: 600; color: var(--accent); }
+  .rank { color: var(--dim); font-size: 11px; }
+
+  .comp { font-weight: 800; font-size: 14px; border-radius: 7px; padding: 3px 7px;
+          display: inline-block; min-width: 34px; }
+  .comp.hi { background: rgba(26,157,107,0.20); color: #15724e; }
+  .comp.mid { background: rgba(47,111,179,0.16); color: #245585; }
+  .comp.lo { background: var(--grid); color: var(--dim); }
+
+  /* letter cells */
+  .lt { display: inline-flex; flex-direction: column; align-items: center; gap: 1px;
+        width: 30px; }
+  .lt .k { font-weight: 800; font-size: 11px; }
+  .lt .v { font-size: 9px; color: var(--dim); }
+  .lt.pass .k { color: var(--green); }
+  .lt.fail .k { color: var(--dim); opacity: 0.55; }
+  .lt.na .k { color: var(--grid); }
+  .lt.pending .k { color: var(--amber); opacity: 0.7; }
+
+  .empty { color: var(--dim); text-align: center; padding: 28px; font-size: 12px; }
+  .note { font-size: 10px; color: var(--dim); line-height: 1.6; margin-top: 10px; }
+  .legend { font-size: 10px; color: var(--dim); margin-top: 6px; line-height: 1.7; }
+  .legend b { color: var(--ink); }
+  footer { margin-top: 22px; font-size: 10px; color: var(--dim); text-align: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <nav>
+      <a href="/" class="nav-link">← Home</a>
+      <a href="/rrg.html" class="nav-link" style="margin-left:14px">RRG →</a>
+      <a href="/breadth.html" class="nav-link" style="margin-left:14px">Breadth →</a>
+      <a href="/screener.html" class="nav-link" style="margin-left:14px">Screener →</a>
+      <a href="/rankings.html" class="nav-link" style="margin-left:14px">Rankings →</a>
+      <a href="/themes.html" class="nav-link" style="margin-left:14px">Themes →</a>
+    </nav>
+    <h1>CANSLIM<span class="sub">O'Neil / IBD 7-factor growth scorecard · composed from the harness</span></h1>
+  </div>
+  <div class="status-line" id="status">loading…</div>
+</header>
+
+<div class="panel">
+  <div class="panel-title">M · Market Direction</div>
+  <div class="market" id="market"><span class="desc">loading…</span></div>
+</div>
+
+<div class="panel">
+  <div class="controls">
+    <label for="universe">Universe</label>
+    <select id="universe">
+      <option value="sp500">S&amp;P 500</option>
+      <option value="nasdaq">Nasdaq</option>
+      <option value="nyse">NYSE</option>
+      <option value="all">All</option>
+    </select>
+    <label for="limit">Show</label>
+    <select id="limit">
+      <option value="25">Top 25</option>
+      <option value="50" selected>Top 50</option>
+      <option value="100">Top 100</option>
+    </select>
+    <span class="status-line" id="count"></span>
+  </div>
+  <div class="legend">
+    <b>C</b> quarterly EPS growth · <b>A</b> annual growth · <b>N</b> near 52w high ·
+    <b>S</b> supply/demand (accumulation + float) · <b>L</b> RS leader rating ·
+    <b>I</b> institutional sponsorship (⋯ until ownership history accumulates) · green = passes ≥60.
+  </div>
+</div>
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th class="rank">#</th><th class="l">Symbol</th><th>Score</th>
+        <th>C</th><th>A</th><th>N</th><th>S</th><th>L</th><th>I</th>
+        <th>RS</th><th>A/D</th><th class="l">Sector</th><th>Price</th>
+      </tr>
+    </thead>
+    <tbody id="rows"><tr><td class="empty" colspan="13">loading…</td></tr></tbody>
+  </table>
+  <div class="note" id="note"></div>
+</div>
+
+<footer>Free data sources · local only · not investment advice</footer>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function compClass(v) { return v >= 80 ? 'hi' : v >= 60 ? 'mid' : 'lo'; }
+
+function letterCell(L) {
+  if (L === null || L === undefined) return `<span class="lt na"><span class="k">·</span><span class="v"> </span></span>`;
+  const cls = L.pass ? 'pass' : 'fail';
+  return `<span class="lt ${cls}"><span class="k">${L.pass ? '✓' : '·'}</span><span class="v">${Math.round(L.score)}</span></span>`;
+}
+function pendingCell() {
+  return `<span class="lt pending"><span class="k">⋯</span><span class="v">—</span></span>`;
+}
+
+function renderMarket(m) {
+  const el = $('market');
+  const reg = (m.regime || 'unknown').toLowerCase();
+  el.innerHTML =
+    `<span class="pill ${reg}">${m.regime || 'UNKNOWN'}</span>` +
+    `<span class="desc">${m.label} &nbsp;·&nbsp; score multiplier ×${m.factor}</span>`;
+}
+
+function renderRows(stocks) {
+  const tb = $('rows');
+  if (!stocks.length) {
+    tb.innerHTML = '<tr><td class="empty" colspan="13">No scored stocks yet — build a screener snapshot + fundamentals, then refresh.</td></tr>';
+    return;
+  }
+  tb.innerHTML = stocks.map((s, i) => {
+    const lt = s.letters;
+    return `<tr>
+      <td class="rank">${i + 1}</td>
+      <td class="l sym">${s.symbol}</td>
+      <td><span class="comp ${compClass(s.composite)}">${s.composite}</span></td>
+      <td>${letterCell(lt.C)}</td>
+      <td>${letterCell(lt.A)}</td>
+      <td>${letterCell(lt.N)}</td>
+      <td>${letterCell(lt.S)}</td>
+      <td>${letterCell(lt.L)}</td>
+      <td>${lt.I ? letterCell(lt.I) : pendingCell()}</td>
+      <td>${s.rs_rating ?? '—'}</td>
+      <td>${s.ad_rating ?? '—'}</td>
+      <td class="l">${s.sector ?? '—'}</td>
+      <td>${s.close != null ? '$' + s.close.toFixed(2) : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+async function load() {
+  const universe = $('universe').value;
+  const limit = $('limit').value;
+  $('rows').innerHTML = '<tr><td class="empty" colspan="13">loading…</td></tr>';
+  try {
+    const r = await fetch(`/api/canslim?universe=${universe}&limit=${limit}`);
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    renderMarket(d.market || {});
+    renderRows(d.stocks || []);
+    $('status').textContent = d.as_of ? ('as of ' + d.as_of) : 'no snapshot';
+    $('count').textContent = d.total ? `${d.stocks.length} of ${d.total} scored` : '';
+    $('note').textContent = d.note || '';
+  } catch {
+    $('rows').innerHTML = '<tr><td class="empty" colspan="13">Unavailable — is the server running with a built screener snapshot?</td></tr>';
+    $('status').textContent = 'unavailable';
+  }
+}
+
+$('universe').addEventListener('change', load);
+$('limit').addEventListener('change', load);
+load();
+</script>
+
+</body>
+</html>

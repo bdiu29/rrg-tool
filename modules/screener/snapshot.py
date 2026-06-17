@@ -32,6 +32,41 @@ FLAGSTATS_MAX_AGE = 90     # days a symbol's flag win-rate is cached before reco
 FLAGSTATS_DAYS    = 1125   # ~3y of bars for a stable per-symbol win-rate
 FLAGSTATS_CHUNK   = 500    # symbols per panel load (keeps the working set small)
 
+GROWTH_MAX_AGE = 30        # days EPS-growth (quarterly-changing) is cached (CANSLIM C/A)
+INST_MAX_AGE   = 80        # days between institutional-ownership reads (~quarterly → QoQ delta)
+
+
+def _yf_institutional(t):
+    """Best-effort institutional ownership from a yfinance Ticker → (pct_held, holders).
+    pct_held = `info['heldPercentInstitutions']` (fraction); holders = the count of
+    reported top institutional holders (a floor — yfinance doesn't expose the true
+    total). Either may be None. The quarter-over-quarter %-held trend is the real
+    signal; holder count is a weak secondary."""
+    pct = holders = None
+    try:
+        pct = (t.info or {}).get("heldPercentInstitutions")
+    except Exception:
+        pct = None
+    try:
+        ih = t.institutional_holders
+        if ih is not None and hasattr(ih, "__len__") and len(ih):
+            holders = float(len(ih))
+    except Exception:
+        holders = None
+    return pct, holders
+
+
+def _yf_growth(info):
+    """Extract CANSLIM earnings-growth fields from a yfinance `.info` dict (fractions,
+    e.g. 0.25 = +25%). `earningsGrowth` is the annual read; `revenueGrowth` is the
+    fallback when EPS growth is unavailable. Missing → None (NULL, not 0)."""
+    info = info or {}
+    q = info.get("earningsQuarterlyGrowth")
+    a = info.get("earningsGrowth")
+    if a is None:
+        a = info.get("revenueGrowth")
+    return {"eps_growth_q": q, "eps_growth_a": a}
+
 _lock = threading.Lock()
 _stop = threading.Event()
 
@@ -342,9 +377,44 @@ def _run_fundamentals():
         if _stop.is_set():
             return
         try:
-            sector = (yf.Ticker(sym.replace(".", "-")).info or {}).get("sector")
+            info = yf.Ticker(sym.replace(".", "-")).info or {}
+            sector = info.get("sector")
             store.upsert_fundamental(sym, status="yfinance", sector=sector,
-                                     sector_etf=SECTOR_ETF_MAP.get(sector))
+                                     sector_etf=SECTOR_ETF_MAP.get(sector),
+                                     **_yf_growth(info))     # growth for free from the same call
+        except Exception as e:
+            _fail(sym, e)
+        _tick()
+        time.sleep(YF_THROTTLE)
+
+    # Phase 5 — EPS growth refresh (CANSLIM C/A), staleness-gated over the universe.
+    # Names classified in an earlier run (so Phase 4 skipped them) get growth here;
+    # it refreshes quarterly (GROWTH_MAX_AGE) since earnings growth moves with reports.
+    stale_growth = store.stale_fundamental_symbols(symbols, GROWTH_MAX_AGE,
+                                                   column="eps_growth_q")
+    _phase("earnings growth", stale_growth, f"EPS growth: {len(stale_growth)} symbols…")
+    for sym in stale_growth:
+        if _stop.is_set():
+            return
+        try:
+            info = yf.Ticker(sym.replace(".", "-")).info or {}
+            store.upsert_fundamental(sym, status="yfinance", **_yf_growth(info))
+        except Exception as e:
+            _fail(sym, e)
+        _tick()
+        time.sleep(YF_THROTTLE)
+
+    # Phase 6 — institutional ownership (CANSLIM "I"), ~quarterly cadence so a
+    # quarter-over-quarter %-held delta accumulates in inst_ownership_history.
+    stale_inst = store.stale_inst_symbols(symbols, INST_MAX_AGE)
+    _phase("institutional", stale_inst, f"institutional ownership: {len(stale_inst)} symbols…")
+    for sym in stale_inst:
+        if _stop.is_set():
+            return
+        try:
+            pct, holders = _yf_institutional(yf.Ticker(sym.replace(".", "-")))
+            if pct is not None:
+                store.record_inst_ownership(sym, pct, holders)
         except Exception as e:
             _fail(sym, e)
         _tick()

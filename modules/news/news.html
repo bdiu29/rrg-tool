@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>News &amp; Macro Events — Market Intelligence Harness</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #ffffff; --panel: #f4f7fc; --panel2: #e7eef8; --grid: #d7e0ee;
+    --ink: #0e2148; --dim: #5d6b85; --accent: #16336e;
+    --green: #1a9d6b; --red: #d1453b; --blue: #2f6fb3; --amber: #b8860b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: 'Spline Sans Mono', monospace;
+    padding: 32px 28px; max-width: 1080px; margin: 0 auto;
+    background-image: radial-gradient(circle at 20% 0%, rgba(22,51,110,0.08), transparent 40%);
+  }
+  header { display: flex; justify-content: space-between; align-items: flex-end;
+           margin-bottom: 18px; flex-wrap: wrap; gap: 12px; }
+  nav { margin-bottom: 10px; }
+  .nav-link { color: var(--dim); text-decoration: none; font-size: 11px; letter-spacing: 0.04em; }
+  .nav-link:hover { color: var(--accent); }
+  h1 { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800;
+       font-size: 30px; letter-spacing: -0.02em; line-height: 1; }
+  h1 .sub { display: block; font-size: 11px; font-weight: 400; color: var(--dim);
+            letter-spacing: 0.06em; margin-top: 7px; text-transform: uppercase; }
+  .status-line { font-size: 11px; color: var(--dim); text-align: right; }
+
+  .banner { border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; font-size: 12.5px;
+            border: 1px solid var(--grid); background: var(--panel); display: none; text-decoration: none; }
+  .banner.show { display: block; }
+  .banner.risk { background: rgba(184,134,11,0.12); border-color: rgba(184,134,11,0.4); color: #7a5a08; }
+  .banner b { font-weight: 600; }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--grid); }
+  .tab { padding: 8px 16px; font-size: 12px; cursor: pointer; color: var(--dim);
+         border-bottom: 2px solid transparent; }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  .tab.disabled { opacity: 0.4; cursor: default; }
+  .tabpane { display: none; } .tabpane.active { display: block; }
+
+  .toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 1px solid var(--grid); border-radius: 7px; overflow: hidden; }
+  .seg button { background: var(--panel); border: none; color: var(--dim);
+                font-family: inherit; font-size: 11px; padding: 6px 12px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--grid); }
+  .seg button.active { background: var(--accent); color: #fff; }
+  .btn { background: var(--panel); color: var(--ink); border: 1px solid var(--grid);
+         border-radius: 7px; font-family: inherit; font-size: 11px; padding: 6px 14px; cursor: pointer; }
+  .btn:hover { border-color: var(--accent); }
+  .note { font-size: 11px; color: var(--dim); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  thead th { text-align: left; color: var(--dim); font-weight: 500; font-size: 10px;
+             text-transform: uppercase; letter-spacing: 0.07em; padding: 8px 10px;
+             border-bottom: 1.5px solid var(--ink); white-space: nowrap; }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  .num { text-align: left; font-variant-numeric: tabular-nums; }
+
+  tr.week-row td { padding: 16px 10px 6px; border-bottom: none; }
+  .week-hd { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 12px;
+             letter-spacing: 0.06em; color: var(--accent); }
+  tr.day-row td { padding: 10px 10px 6px; border-bottom: 1px solid var(--ink);
+                  font-weight: 800; font-size: 12px; letter-spacing: 0.03em; }
+  tr.day-row.today td { color: var(--accent); }
+  tr.day-row.today .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+                          background: var(--amber); margin-left: 7px; vertical-align: middle; }
+  tr.day-row.past td { color: var(--dim); }
+  tr.none-row td { color: var(--dim); font-style: italic; padding: 8px 10px; }
+  tr.ev-row:hover td { background: rgba(22,51,110,0.04); }
+  tr.ev-row.past td { color: var(--dim); }
+
+  .time { color: var(--dim); white-space: nowrap; }
+  .report a { color: var(--ink); text-decoration: none; } .report a:hover { color: var(--accent); text-decoration: underline; }
+  .report.high { font-weight: 600; }
+  .report .star { color: var(--amber); margin-right: 5px; }
+  .sym { font-weight: 600; }
+  .muted { color: var(--dim); }
+  .tk { font-size: 10px; color: var(--accent); margin-right: 5px; white-space: nowrap; }
+  .sent { display: inline-block; font-size: 9.5px; font-weight: 600; padding: 2px 7px;
+          border-radius: 5px; letter-spacing: 0.03em; }
+  .sent.bull { background: rgba(26,157,107,0.18); color: #15724e; }
+  .sent.bear { background: rgba(209,69,59,0.16); color: #a3322a; }
+  .sent.neutral { background: var(--grid); color: var(--dim); }
+
+  .macro-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 760px) { .macro-grid { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--grid); border-radius: 12px; padding: 14px 16px; }
+  .panel-title { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin-bottom: 10px; }
+  .panel-title .count { color: var(--accent); margin-left: 6px; font-size: 9.5px; text-transform: none; letter-spacing: 0; }
+  .inv-line { font-size: 12.5px; margin-bottom: 14px; padding: 10px 14px; border-radius: 9px;
+              border: 1px solid var(--grid); background: var(--panel); }
+  .inv-line.inverted { background: rgba(209,69,59,0.10); border-color: rgba(209,69,59,0.35); color: #a3322a; }
+  .inv-line.normal   { background: rgba(26,157,107,0.10); border-color: rgba(26,157,107,0.30); color: #15724e; }
+  .rate-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+  tr.spread-row td { background: rgba(22,51,110,0.04); }
+  .bps.up { color: var(--green); } .bps.down { color: var(--red); } .bps.flat { color: var(--dim); }
+
+  .soon-pane { color: var(--dim); font-size: 12.5px; line-height: 1.7; padding: 28px;
+               text-align: center; background: var(--panel); border: 1px dashed var(--grid); border-radius: 12px; }
+  footer { margin-top: 30px; font-size: 10px; color: var(--dim); letter-spacing: 0.06em; text-transform: uppercase; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <nav>
+      <a href="/" class="nav-link">← Home</a>
+      <a href="/rrg.html" class="nav-link" style="margin-left:14px">RRG →</a>
+      <a href="/breadth.html" class="nav-link" style="margin-left:14px">Breadth →</a>
+      <a href="/schwab.html" class="nav-link" style="margin-left:14px">Schwab →</a>
+      <a href="/screener.html" class="nav-link" style="margin-left:14px">Screener →</a>
+      <a href="/rankings.html" class="nav-link" style="margin-left:14px">Rankings →</a>
+    </nav>
+    <h1>News &amp; Macro Events<span class="sub">Economic calendar · earnings · FOMC</span></h1>
+  </div>
+  <div class="status-line" id="status">loading…</div>
+</header>
+
+<a class="banner" id="risk-banner" href="#"></a>
+
+<div class="tabs">
+  <div class="tab active" data-tab="econ">Economic Calendar</div>
+  <div class="tab" data-tab="earnings">Earnings</div>
+  <div class="tab" data-tab="news">News feed</div>
+  <div class="tab" data-tab="macro">Rates &amp; Curve</div>
+</div>
+
+<div class="toolbar">
+  <div class="seg" id="weeks-seg">
+    <button data-weeks="2">2 wks</button>
+    <button data-weeks="3" class="active">3 wks</button>
+    <button data-weeks="4">4 wks</button>
+  </div>
+  <div class="seg" id="imp-seg">
+    <button data-imp="all" class="active">All</button>
+    <button data-imp="high">High impact</button>
+  </div>
+  <div class="seg" id="focus-seg" style="display:none">
+    <button data-focus="0" class="active">All news</button>
+    <button data-focus="1">Focus only</button>
+  </div>
+  <button class="btn" id="refresh-btn">↻ Refresh</button>
+  <span class="note" id="cal-note"></span>
+</div>
+
+<div class="tabpane active" id="pane-econ">
+  <table>
+    <thead><tr>
+      <th>Time (ET)</th><th>Report</th><th>Period</th>
+      <th class="num">Actual</th><th class="num">Median Forecast</th><th class="num">Previous</th>
+    </tr></thead>
+    <tbody id="econ-body"><tr><td colspan="6" class="none-row">loading…</td></tr></tbody>
+  </table>
+</div>
+
+<div class="tabpane" id="pane-earnings">
+  <table>
+    <thead><tr>
+      <th>Time (ET)</th><th>Symbol</th><th>Period</th>
+      <th class="num">EPS Est.</th><th class="num">EPS Actual</th>
+    </tr></thead>
+    <tbody id="earn-body"><tr><td colspan="5" class="none-row">loading…</td></tr></tbody>
+  </table>
+</div>
+
+<div class="tabpane" id="pane-news">
+  <table>
+    <thead><tr>
+      <th>Time</th><th>Source</th><th>Headline</th><th>Tickers</th><th>Sentiment</th>
+    </tr></thead>
+    <tbody id="news-body"><tr><td colspan="5" class="none-row">loading…</td></tr></tbody>
+  </table>
+</div>
+
+<div class="tabpane" id="pane-macro">
+  <div class="inv-line" id="inv-line" style="display:none"></div>
+  <div class="macro-grid">
+    <div class="panel">
+      <div class="panel-title">Key rates<span class="count" id="rates-asof"></span></div>
+      <table>
+        <thead><tr>
+          <th>Rate</th><th class="num">Latest</th><th class="num">1D</th><th class="num">1W</th><th class="num">1M</th>
+        </tr></thead>
+        <tbody id="rates-body"><tr><td colspan="5" class="none-row">loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Yield curve</div>
+      <div id="curve-wrap"></div>
+    </div>
+  </div>
+</div>
+
+<footer>Free data sources · local only · not investment advice</footer>
+
+<script>
+let curTab = "econ", curWeeks = 3, curImp = "all", curFocus = "0";
+
+function esc(s){ return (s==null?"":String(s)).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+const dash = v => (v===null||v===undefined||v==="") ? '<span class="muted">—</span>' : esc(v);
+const whenLabel = { bmo:"Before open", amc:"After close", dmh:"During mkt" };
+
+function weekRow(label, cols){ return `<tr class="week-row"><td colspan="${cols}"><span class="week-hd">${esc(label)}</span></td></tr>`; }
+function dayRow(day, cols){
+  const cls = day.is_today ? "today" : (day.is_past ? "past" : "");
+  const dot = day.is_today ? '<span class="dot"></span>' : "";
+  return `<tr class="day-row ${cls}"><td colspan="${cols}">${esc(day.label)}${dot}</td></tr>`;
+}
+function noneRow(cols){ return `<tr class="none-row"><td colspan="${cols}">None scheduled</td></tr>`; }
+
+function econRow(ev, day){
+  const time = ev.time || (ev.kind === "fomc" ? "" : "");
+  const high = ev.importance === "high";
+  const name = ev.url ? `<a href="${esc(ev.url)}" target="_blank" rel="noopener">${esc(ev.title)}</a>` : esc(ev.title);
+  const star = high ? '<span class="star" title="high impact">★</span>' : "";
+  return `<tr class="ev-row ${day.is_past?'past':''}">
+    <td class="time">${dash(time)}</td>
+    <td class="report ${high?'high':''}">${star}${name}</td>
+    <td>${dash(ev.period)}</td>
+    <td class="num">${dash(ev.actual)}</td>
+    <td class="num muted">—</td>
+    <td class="num">${dash(ev.previous)}</td>
+  </tr>`;
+}
+
+function earnRow(ev, day){
+  const x = ev.extra || {};
+  const time = ev.time || whenLabel[x.when] || "";
+  const sym = ev.symbols || ev.title;
+  return `<tr class="ev-row ${day.is_past?'past':''}">
+    <td class="time">${dash(time)}</td>
+    <td class="sym">${esc(sym)}</td>
+    <td>${dash(ev.period)}</td>
+    <td class="num">${dash(x.eps_est)}</td>
+    <td class="num">${dash(x.eps_actual)}</td>
+  </tr>`;
+}
+
+function render(data, bodyId, cols, rowFn){
+  let html = "", total = 0;
+  for(const wk of data.weeks){
+    html += weekRow(wk.label, cols);
+    for(const day of wk.days){
+      html += dayRow(day, cols);
+      if(!day.events.length){ html += noneRow(cols); }
+      else { total += day.events.length; for(const ev of day.events) html += rowFn(ev, day); }
+    }
+  }
+  document.getElementById(bodyId).innerHTML = html || `<tr><td colspan="${cols}" class="none-row">no events</td></tr>`;
+  return total;
+}
+
+function sentPill(s){
+  if(!s) return '<span class="muted">—</span>';
+  const l = s.toLowerCase();
+  const cls = l.includes("bull") ? "bull" : (l.includes("bear") ? "bear" : "neutral");
+  return `<span class="sent ${cls}">${esc(s.replace("Somewhat-","~"))}</span>`;
+}
+function newsRow(it){
+  const tickers = (it.tickers && it.tickers.length)
+    ? it.tickers.slice(0,5).map(t => `<span class="tk">${esc(t)}</span>`).join("")
+    : '<span class="muted">—</span>';
+  const head = it.url ? `<a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.title)}</a>` : esc(it.title);
+  return `<tr class="ev-row">
+    <td class="time">${dash(it.time)}</td>
+    <td class="muted">${dash(it.source)}</td>
+    <td class="report">${head}</td>
+    <td>${tickers}</td>
+    <td>${sentPill(it.sentiment)}</td>
+  </tr>`;
+}
+function renderNews(data){
+  let html = "";
+  for(const day of data.days){
+    html += dayRow(day, 5);
+    for(const it of day.items) html += newsRow(it);
+  }
+  document.getElementById("news-body").innerHTML = html || `<tr><td colspan="5" class="none-row">no recent headlines</td></tr>`;
+}
+
+function fmtSpread(v){ return v == null ? "—" : (v > 0 ? "+" : "") + v + "%"; }
+function bpsCell(v){
+  if(v === null || v === undefined) return '<span class="muted">—</span>';
+  const cls = v > 0 ? "up" : (v < 0 ? "down" : "flat");
+  return `<span class="bps ${cls}">${v > 0 ? "+" : ""}${v}</span>`;
+}
+function ratesRow(r){
+  const val = r.value == null ? '<span class="muted">—</span>' : `<span class="rate-val">${r.value}%</span>`;
+  return `<tr class="${r.kind === 'spread' ? 'spread-row' : ''}">
+    <td>${esc(r.label)}</td><td class="num">${val}</td>
+    <td class="num">${bpsCell(r.d1)}</td><td class="num">${bpsCell(r.d5)}</td><td class="num">${bpsCell(r.d21)}</td>
+  </tr>`;
+}
+function renderInversion(inv){
+  const el = document.getElementById("inv-line");
+  if(!inv){ el.style.display = "none"; return; }
+  el.style.display = "block";
+  const sp = `10Y–2Y ${fmtSpread(inv.t10y2y)} · 10Y–3M ${fmtSpread(inv.t10y3m)}`;
+  if(inv.inverted){
+    el.className = "inv-line inverted";
+    el.textContent = `⚠ Yield curve inverted — ${sp} · classic late-cycle / recession-risk signal`;
+  } else {
+    el.className = "inv-line normal";
+    el.textContent = `Yield curve normal (un-inverted) — ${sp}`;
+  }
+}
+function buildCurve(curve){
+  if(!curve || !curve.length) return '<div class="none-row">no curve data</div>';
+  const W = 360, H = 132, padX = 26, padY = 24, n = curve.length;
+  const vals = curve.map(c => c.value), mn = Math.min(...vals), mx = Math.max(...vals), span = (mx - mn) || 1;
+  const x = i => padX + (W - 2*padX) * (n === 1 ? 0.5 : i/(n-1));
+  const y = v => padY + (H - 2*padY) * (1 - (v - mn)/span);
+  const pts = curve.map((c,i) => `${x(i).toFixed(1)},${y(c.value).toFixed(1)}`).join(" ");
+  const marks = curve.map((c,i) =>
+    `<circle cx="${x(i).toFixed(1)}" cy="${y(c.value).toFixed(1)}" r="3" fill="var(--accent)"/>`
+    + `<text x="${x(i).toFixed(1)}" y="${(y(c.value)-9).toFixed(1)}" text-anchor="middle" font-size="9.5" fill="var(--ink)">${c.value}</text>`
+    + `<text x="${x(i).toFixed(1)}" y="${H-6}" text-anchor="middle" font-size="9.5" fill="var(--dim)">${esc(c.tenor)}</text>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px">
+    <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="1.6"/>${marks}</svg>`;
+}
+async function loadMacro(){
+  const st = document.getElementById("status");
+  try {
+    const r = await fetch("/api/news/rates"); if(!r.ok) throw new Error();
+    const d = await r.json();
+    document.getElementById("cal-note").textContent = d.note || "";
+    if(!d.fred_keyed){
+      document.getElementById("inv-line").style.display = "none";
+      document.getElementById("rates-body").innerHTML = `<tr><td colspan="5" class="none-row">${esc(d.note)}</td></tr>`;
+      document.getElementById("curve-wrap").innerHTML = "";
+      document.getElementById("rates-asof").textContent = "";
+      st.textContent = "needs FRED key"; return;
+    }
+    renderInversion(d.inversion);
+    document.getElementById("rates-body").innerHTML = d.rates.map(ratesRow).join("");
+    document.getElementById("rates-asof").textContent = d.as_of ? ("as of " + d.as_of) : "";
+    document.getElementById("curve-wrap").innerHTML = buildCurve(d.curve);
+    st.textContent = "as of " + (d.as_of || "—");
+  } catch {
+    st.textContent = "unavailable";
+    document.getElementById("rates-body").innerHTML = `<tr><td colspan="5" class="none-row">could not load</td></tr>`;
+  }
+}
+
+async function loadTab(){
+  const st = document.getElementById("status");
+  const isEcon = curTab === "econ", isEarn = curTab === "earnings",
+        isNews = curTab === "news", isMacro = curTab === "macro";
+  document.getElementById("weeks-seg").style.display = (isNews || isMacro) ? "none" : "";
+  document.getElementById("imp-seg").style.display   = isEcon ? "" : "none";
+  document.getElementById("focus-seg").style.display = isNews ? "" : "none";
+  if(isMacro){ await loadMacro(); return; }
+  try {
+    if(isNews){
+      const r = await fetch(`/api/news/feed?focus=${curFocus}&days=7`); if(!r.ok) throw new Error();
+      const d = await r.json();
+      renderNews(d);
+      document.getElementById("cal-note").textContent = d.note || "";
+      st.textContent = "as of " + (d.as_of || "—");
+      return;
+    }
+    let url = `/api/news/calendar?track=${curTab}&weeks=${curWeeks}`;
+    if(isEcon && curImp === "high") url += "&importance=high";
+    const r = await fetch(url); if(!r.ok) throw new Error();
+    const d = await r.json();
+    if(isEcon) render(d, "econ-body", 6, econRow);
+    else       render(d, "earn-body", 5, earnRow);
+    document.getElementById("cal-note").textContent = d.note || "";
+    st.textContent = "as of " + (d.as_of || "—");
+  } catch {
+    st.textContent = "unavailable";
+    const id = isNews ? "news-body" : (isEcon ? "econ-body" : "earn-body");
+    document.getElementById(id).innerHTML =
+      `<tr><td colspan="${isEcon?6:5}" class="none-row">could not load</td></tr>`;
+  }
+}
+
+async function loadRisk(){
+  const el = document.getElementById("risk-banner");
+  try {
+    const r = await fetch("/api/news/event-risk"); if(!r.ok) throw new Error();
+    const d = await r.json();
+    if(!d.event){ el.className = "banner"; return; }
+    el.href = "#"; el.innerHTML = `⚑ <b>Next macro event:</b> ${esc(d.note)}`;
+    el.className = "banner show" + (d.flag ? " risk" : "");
+  } catch { el.className = "banner"; }
+}
+
+document.querySelector(".tabs").addEventListener("click", e => {
+  const t = e.target.closest(".tab"); if(!t || t.classList.contains("disabled")) return;
+  curTab = t.dataset.tab;
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x === t));
+  document.getElementById("pane-econ").classList.toggle("active", curTab === "econ");
+  document.getElementById("pane-earnings").classList.toggle("active", curTab === "earnings");
+  document.getElementById("pane-news").classList.toggle("active", curTab === "news");
+  document.getElementById("pane-macro").classList.toggle("active", curTab === "macro");
+  loadTab();
+});
+document.getElementById("focus-seg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if(!b) return;
+  curFocus = b.dataset.focus;
+  [...e.currentTarget.children].forEach(x => x.classList.toggle("active", x === b));
+  loadTab();
+});
+document.getElementById("weeks-seg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if(!b) return;
+  curWeeks = +b.dataset.weeks;
+  [...e.currentTarget.children].forEach(x => x.classList.toggle("active", x === b));
+  loadTab();
+});
+document.getElementById("imp-seg").addEventListener("click", e => {
+  const b = e.target.closest("button"); if(!b) return;
+  curImp = b.dataset.imp;
+  [...e.currentTarget.children].forEach(x => x.classList.toggle("active", x === b));
+  loadTab();
+});
+document.getElementById("refresh-btn").addEventListener("click", async e => {
+  e.target.disabled = true; e.target.textContent = "↻ refreshing…";
+  try { await fetch("/api/news/refresh", { method:"POST" }); } catch {}
+  await Promise.all([loadTab(), loadRisk()]);
+  e.target.disabled = false; e.target.textContent = "↻ Refresh";
+});
+
+loadTab();
+loadRisk();
+</script>
+
+</body>
+</html>

@@ -15,6 +15,7 @@ import pandas as pd
 # the vectorized panel forms here rather than re-implementing them. No new I/O.
 from modules.confluence import flags as rrg_flags
 from modules.confluence import exhaustion as rrg_exhaustion
+from modules.confluence import accumulation as rrg_accumulation
 
 # ≈320 trading bars: 252 for 52-week levels + warmup buffer for SMA200/RSI.
 SNAPSHOT_LOOKBACK_DAYS = 470
@@ -177,9 +178,11 @@ def compute_indicator_panels(close, volume, open_, high, low, spy_close):
     panels.update({f"sma{n}": smas[n] for n in SMA_SPANS})
     panels.update({f"ema{n}": emas[n] for n in EMA_SPANS})
     panels.update(golden_pocket(high, low, close))
-    # bull/bear flag state + volume buyer/seller exhaustion (rrg leaves)
+    # bull/bear flag state + volume buyer/seller exhaustion + accum/distrib rating
+    # (confluence leaves — single source of truth shared with rrg conviction)
     panels["flag"] = rrg_flags.flag_panels(close, volume)
     panels["exhaustion"] = rrg_exhaustion.exhaustion_panels(high, low, close, volume)
+    panels["ad_rating"] = rrg_accumulation.panels(high, low, close, volume)
     return panels
 
 

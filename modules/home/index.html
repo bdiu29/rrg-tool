@@ -173,34 +173,22 @@
     <span class="badge" id="flow-badge">loading…</span>
   </a>
 
+  <a class="card" href="/canslim.html">
+    <h2>CANSLIM</h2>
+    <p>O'Neil / IBD's 7-factor growth scorecard — earnings (C/A), new highs (N), supply/demand (S), leader RS (L), institutional (I), market direction (M) — composed from breadth, rankings, accumulation, and fundamentals into a 0-99 composite.</p>
+    <span class="badge" id="canslim-badge">loading…</span>
+  </a>
+
+  <a class="card" href="/news.html">
+    <h2>News &amp; Macro Events</h2>
+    <p>Economic calendar, FOMC decisions/minutes, Fed speeches &amp; focus-list earnings — with an event-risk read so you size smaller into the print. Free sources; FRED key upgrades to exact dates.</p>
+    <span class="badge" id="news-badge">loading…</span>
+  </a>
+
 </div>
 
 <div class="section-label">Planned</div>
 <div class="grid">
-
-  <div class="card planned">
-    <h2>Sub-Industry Trackers</h2>
-    <p>RRG-style views for software, space, and semiconductor sub-industries.</p>
-    <span class="badge">planned</span>
-  </div>
-
-  <div class="card planned">
-    <h2>News &amp; Macro Events</h2>
-    <p>Headline feed, economic calendar, FOMC dates.</p>
-    <span class="badge">planned</span>
-  </div>
-
-  <div class="card planned">
-    <h2>JPM Collar Tracker</h2>
-    <p>Quarterly JPM collar strikes and expiry.</p>
-    <span class="badge">planned</span>
-  </div>
-
-  <div class="card planned">
-    <h2>Fed Rate Probabilities</h2>
-    <p>Rate cut/hike odds from fed funds futures.</p>
-    <span class="badge">planned</span>
-  </div>
 
   <div class="card planned">
     <h2>AI Subagents</h2>
@@ -358,6 +346,38 @@ loadScreenerBadge();
 loadRankingsBadge();
 loadThemesBadge();
 loadFlowBadge();
+
+async function loadCanslimBadge() {
+  const el = document.getElementById('canslim-badge');
+  try {
+    const r = await fetch('/api/canslim/summary');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    if (!d.text || d.status === 'neutral') throw new Error();
+    el.textContent = 'top ' + d.text;
+    el.className = 'badge accent';
+  } catch {
+    el.textContent = 'no snapshot yet';
+    el.className = 'badge';
+  }
+}
+loadCanslimBadge();
+
+async function loadNewsBadge() {
+  const el = document.getElementById('news-badge');
+  try {
+    const r = await fetch('/api/news/summary');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    if (!d.text || d.text === 'no events') throw new Error();
+    el.textContent = d.text;
+    el.className = 'badge ' + (d.flag ? 'accent' : 'healthy');
+  } catch {
+    el.textContent = 'no events';
+    el.className = 'badge';
+  }
+}
+loadNewsBadge();
 </script>
 
 </body>

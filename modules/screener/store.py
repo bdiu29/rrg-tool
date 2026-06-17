@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS snapshot (
     pct_from_52w_high REAL, pct_from_52w_low REAL,
     gp_direction TEXT, gp_retrace REAL, gp_in_pocket REAL, gp_approaching REAL,
     gp_zone_low REAL, gp_zone_high REAL,
-    flag TEXT, exhaustion TEXT       -- bull/bear flag state; buyer/seller volume exhaustion
+    flag TEXT, exhaustion TEXT,      -- bull/bear flag state; buyer/seller volume exhaustion
+    ad_rating TEXT                   -- accumulation/distribution rating A-E (confluence leaf)
 );
 
 -- Per-symbol historical flag win-rate (continuation success), regime-conditioned,
@@ -56,9 +57,23 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     symbol TEXT PRIMARY KEY,
     market_cap REAL, shares_outstanding REAL, avg_vol_10d_f REAL,
     pe_ratio REAL, div_yield REAL, beta REAL,
+    eps_growth_q REAL,              -- quarterly EPS growth YoY (CANSLIM "C")
+    eps_growth_a REAL,              -- annual EPS / revenue growth (CANSLIM "A")
+    inst_pct_held REAL,             -- fraction of shares held by institutions (CANSLIM "I")
+    inst_holders_count REAL,        -- number of institutional holders
     sector TEXT, sector_etf TEXT,
     earnings_date TEXT,             -- YYYY-MM-DD
     updated_at TEXT, status TEXT, error TEXT
+);
+
+-- Dated institutional-ownership reads so a quarter-over-quarter delta can be derived
+-- (yfinance/13F is a quarterly snapshot → the trend is forward-accumulating).
+CREATE TABLE IF NOT EXISTS inst_ownership_history (
+    symbol        TEXT NOT NULL,
+    date_reported TEXT NOT NULL,    -- the read date (YYYY-MM-DD)
+    pct_held      REAL,
+    holders_count REAL,
+    PRIMARY KEY (symbol, date_reported)
 );
 
 CREATE TABLE IF NOT EXISTS screens (
@@ -210,6 +225,16 @@ BUILTIN_SCREENS = [
             {"field": "volume",     "op": ">",  "value": 100000},
         ],
     },
+    {
+        # Under accumulation — net institutional buying (strong U/D volume ratio +
+        # rising A/D line). The demand side of CANSLIM's "S".
+        "name": "Under Accumulation",
+        "universe": "all",
+        "conditions": [
+            {"field": "ad_rating", "op": "in", "value": ["A", "B"]},
+            {"field": "volume",    "op": ">",  "value": 100000},
+        ],
+    },
 ]
 
 
@@ -225,7 +250,17 @@ def init_db():
     with connect() as conn:
         conn.executescript(_SCHEMA)
         _migrate_snapshot(conn)
+        _migrate_fundamentals(conn)
     prune_alerts()
+
+
+def _migrate_fundamentals(conn):
+    """fundamentals holds real (non-derived) data, so columns are added in place
+    (ADD COLUMN) rather than drop/recreate. Idempotent — only adds what's missing."""
+    have = {r[1] for r in conn.execute("PRAGMA table_info(fundamentals)")}
+    for col in ("eps_growth_q", "eps_growth_a", "inst_pct_held", "inst_holders_count"):
+        if col not in have:
+            conn.execute(f"ALTER TABLE fundamentals ADD COLUMN {col} REAL")
 
 
 def _migrate_snapshot(conn):
@@ -291,7 +326,7 @@ SNAPSHOT_COLS = [
     "pct_from_52w_high", "pct_from_52w_low",
     "gp_direction", "gp_retrace", "gp_in_pocket", "gp_approaching",
     "gp_zone_low", "gp_zone_high",
-    "flag", "exhaustion",
+    "flag", "exhaustion", "ad_rating",
 ]
 
 
@@ -445,11 +480,67 @@ def stale_winrate_symbols(symbols, max_age_days=90):
 def get_fundamentals():
     with connect() as conn:
         df = pd.read_sql_query(
-            "SELECT symbol, market_cap, pe_ratio, div_yield, beta, "
+            "SELECT symbol, market_cap, shares_outstanding, pe_ratio, div_yield, "
+            "beta, eps_growth_q, eps_growth_a, inst_pct_held, inst_holders_count, "
             "sector, sector_etf, earnings_date FROM fundamentals",
             conn, index_col="symbol",
         )
     return df
+
+
+def record_inst_ownership(symbol, pct_held, holders_count, date=None):
+    """Persist one dated institutional-ownership read (history row, idempotent per
+    date) AND update the fundamentals current columns. The history lets a caller
+    derive a quarter-over-quarter delta once two reads exist."""
+    date = date or datetime.now().strftime("%Y-%m-%d")
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO inst_ownership_history (symbol, date_reported, pct_held, holders_count) "
+            "VALUES (?,?,?,?) ON CONFLICT(symbol, date_reported) DO UPDATE SET "
+            "pct_held=excluded.pct_held, holders_count=excluded.holders_count",
+            (symbol, date, pct_held, holders_count),
+        )
+    upsert_fundamental(symbol, status="yfinance",
+                       inst_pct_held=pct_held, inst_holders_count=holders_count)
+
+
+def get_inst_ownership():
+    """→ DataFrame[symbol] with the latest and prior-quarter institutional reads:
+    pct_held, pct_held_prev, holders_count, holders_count_prev. The prev is the most
+    recent earlier dated row (NULL until a second read accumulates)."""
+    with connect() as conn:
+        hist = pd.read_sql_query(
+            "SELECT symbol, date_reported, pct_held, holders_count "
+            "FROM inst_ownership_history ORDER BY symbol, date_reported",
+            conn,
+        )
+    if hist.empty:
+        return pd.DataFrame(columns=["pct_held", "pct_held_prev",
+                                     "holders_count", "holders_count_prev"]).rename_axis("symbol")
+    rows = {}
+    for sym, g in hist.groupby("symbol"):
+        cur  = g.iloc[-1]
+        prev = g.iloc[-2] if len(g) >= 2 else None
+        rows[sym] = {
+            "pct_held":           cur["pct_held"],
+            "pct_held_prev":      (prev["pct_held"] if prev is not None else None),
+            "holders_count":      cur["holders_count"],
+            "holders_count_prev": (prev["holders_count"] if prev is not None else None),
+        }
+    return pd.DataFrame.from_dict(rows, orient="index").rename_axis("symbol")
+
+
+def stale_inst_symbols(symbols, max_age_days=80):
+    """Subset of `symbols` whose newest institutional read is missing or older than
+    `max_age_days`. Gated on the history table's own dates (NOT fundamentals.updated_at,
+    which other phases bump) so reads space out ~quarterly and a QoQ delta accumulates."""
+    cutoff = (datetime.now() - timedelta(days=max_age_days)).strftime("%Y-%m-%d")
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT symbol, MAX(date_reported) FROM inst_ownership_history GROUP BY symbol"
+        ).fetchall()
+    fresh = {s for s, d in rows if d and d >= cutoff}
+    return [s for s in symbols if s not in fresh]
 
 
 def upsert_fundamental(symbol, status, error=None, **fields):

@@ -179,7 +179,8 @@ class TestStoreAlertsAndRouting(unittest.TestCase):
         self.assertEqual(sorted(names),
                          ["Approaching Golden Pocket", "Bear Flag", "Breakout",
                           "Bull Flag", "Buying Climax", "Continuation",
-                          "Golden Pocket", "Selling Climax", "Volume Building"])
+                          "Golden Pocket", "Selling Climax", "Under Accumulation",
+                          "Volume Building"])
 
     def test_screen_match_memory(self):
         store.update_screen_matches(1, {"AAA", "BBB"}, "2026-06-11")

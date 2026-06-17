@@ -8,6 +8,7 @@ never a hard gate). Substitutes the trader's proprietary Monthly BX with:
   * vp_zone       — volume-profile value-area zone (discount / value / premium) =
                     the "Fair Value Bands / discount-vs-premium" leg
   * golden_pocket — price sitting in a Fibonacci golden pocket (structure/discount)
+  * accumulation  — A/D rating (A-E) — institutional buy/sell footprint on the underlying
 
 All pieces are fetched ONCE per poll for the whole universe and are fail-soft —
 any unavailable signal is simply omitted, the rest still annotate the flow.
@@ -50,6 +51,16 @@ def _vp_zones(symbols):
         return {}
 
 
+def _accum(symbols):
+    """{symbol: A/D rating letter} from one cached OHLC fetch. Fail-soft → {}."""
+    try:
+        from modules.rrg import signal
+        reads = signal.accumulation_for(symbols)
+        return {s: (r or {}).get("rating") for s, r in reads.items() if r}
+    except Exception:
+        return {}
+
+
 def _golden_pockets(symbols):
     """{symbol: True} for symbols sitting in a golden pocket, from the screener
     snapshot (best-effort — only covers synced-universe names). Fail-soft → {}."""
@@ -70,13 +81,14 @@ def _golden_pockets(symbols):
 
 
 def build_context(underlyings):
-    """→ {underlying: {sector_call, regime, vp_zone, golden_pocket}} (omitting any
-    unavailable key). Batched + fail-soft; safe to call every poll."""
+    """→ {underlying: {sector_call, regime, vp_zone, golden_pocket, accumulation}}
+    (omitting any unavailable key). Batched + fail-soft; safe to call every poll."""
     underlyings = sorted({s.upper() for s in underlyings if s})
     sector_calls = _sector_calls()
     regime = _regime()
     vp_zones = _vp_zones(underlyings)
     gps = _golden_pockets(underlyings)
+    accum = _accum(underlyings)
 
     out = {}
     for s in underlyings:
@@ -90,5 +102,7 @@ def build_context(underlyings):
             ctx["vp_zone"] = vp_zones[s]
         if gps.get(s):
             ctx["golden_pocket"] = True
+        if accum.get(s):
+            ctx["accumulation"] = accum[s]
         out[s] = ctx
     return out

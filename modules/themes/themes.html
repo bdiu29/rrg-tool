@@ -132,6 +132,11 @@
   .pill.sm { min-width: 28px; height: 21px; font-size: 10px; border-radius: 11px; }
   .pill.na { background: var(--grid); color: var(--dim); }
 
+  /* rank movement: arrow + #ranks moved vs 1D/1W/1M ago */
+  .hist { display: inline-flex; flex-direction: column; align-items: center; gap: 3px; }
+  .rd { font-size: 9.5px; font-weight: 700; line-height: 1; white-space: nowrap; }
+  .rd.up { color: var(--green); } .rd.down { color: var(--red); } .rd.flat { color: var(--dim); }
+
   .movers { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 18px; margin-top: 18px; }
   @media (max-width: 1080px) { .movers { grid-template-columns: 1fr 1fr; } }
   .mover-card { background: var(--panel); border: 1px solid var(--grid); border-radius: 12px; padding: 14px 15px; }
@@ -185,6 +190,7 @@
       <a href="/" class="nav-link">← Home</a>
       <a href="/rrg.html" class="nav-link" style="margin-left:14px">RRG →</a>
       <a href="/rankings.html" class="nav-link" style="margin-left:14px">Rankings →</a>
+      <a href="/canslim.html" class="nav-link" style="margin-left:14px">CANSLIM →</a>
       <a href="/breadth.html" class="nav-link" style="margin-left:14px">Breadth →</a>
       <a href="/screener.html" class="nav-link" style="margin-left:14px">Screener →</a>
     </nav>
@@ -225,7 +231,9 @@
 
   <!-- ranking -->
   <div class="panel" style="margin:0">
-    <div class="panel-title">Theme Strength <span class="count" id="theme-count">—</span></div>
+    <div class="panel-title">Theme Strength
+      <span style="font-size:9px; font-weight:400; color:var(--dim); text-transform:none; letter-spacing:0;">▲▼ ranks moved since 1D / 1W / 1M ago</span>
+      <span class="count" id="theme-count">—</span></div>
     <table id="rank-table">
       <thead><tr>
         <th data-k="rank">Now ↓</th><th data-k="rank_1d">1D</th>
@@ -313,6 +321,14 @@ function rankColor(r){
 function pill(r, sm){ const c = rankColor(r);
   if (!c) return `<span class="pill na ${sm?'sm':''}">—</span>`;
   return `<span class="pill ${sm?'sm':''}" style="background:${c.bg};color:${c.fg};border-color:${c.bd}">${r}</span>`; }
+// How many ranks a theme has moved since a past column: arrow + count.
+// now − then > 0 ⇒ rank rose (stronger) ⇒ green ▲; flat ±0; missing → ·.
+function rankDelta(now, then){
+  if (now == null || then == null) return '<span class="rd flat">·</span>';
+  const d = now - then; if (d === 0) return '<span class="rd flat">±0</span>';
+  const up = d > 0; return `<span class="rd ${up?'up':'down'}">${up?'▲':'▼'}${Math.abs(d)}</span>`; }
+// Past-rank pill with its movement-to-now arrow stacked beneath.
+function histCell(now, then){ return `<div class="hist">${pill(then, true)}${rankDelta(now, then)}</div>`; }
 function sign(v, suf){ if (v === null || v === undefined) return '<span class="muted">—</span>';
   const cls = v > 0 ? 'pos' : (v < 0 ? 'neg' : 'muted');
   return `<span class="${cls}">${(v>0?'+':'')+v.toFixed(2)+(suf||'')}</span>`; }
@@ -422,12 +438,12 @@ function renderTable(){
     if (typeof x==='string') return sortDir*x.localeCompare(y); return sortDir*(x-y); });
   $('theme-count').textContent = rows.length + ' themes';
   $('rank-body').innerHTML = rows.map(s => `
-    <tr><td>${pill(s.rank)}</td><td>${pill(s.rank_1d,true)}</td><td>${pill(s.rank_1w,true)}</td><td>${pill(s.rank_1m,true)}</td>
+    <tr><td>${pill(s.rank)}</td><td>${histCell(s.rank,s.rank_1d)}</td><td>${histCell(s.rank,s.rank_1w)}</td><td>${histCell(s.rank,s.rank_1m)}</td>
       <td class="l"><span class="nm-cell"><span class="sw" style="background:${colorForId(s.id)}"></span>${s.name}</span></td>
       <td>${sign(s.rs_day,'%')}</td><td>${sign(s.rs_wk,'%')}</td><td>${sign(s.rs_mth,'%')}</td><td>${sign(s.pct_52w_high,'%')}</td></tr>`).join('')
     || '<tr><td class="empty" colspan="9">No themes — add one with “Edit themes”.</td></tr>';
 }
-function moverRow(m){ const cls=m.delta>0?'pos':'neg', d=(m.delta>0?'+':'')+m.delta+' pts';
+function moverRow(m){ const up=m.delta>0, cls=up?'pos':'neg', d=`${up?'▲':'▼'}${Math.abs(m.delta)} ranks`;
   return `<div class="mrow">${pill(m.rank,true)}<span class="nm">${m.name}</span><span class="delta ${cls}">${d}</span></div>`; }
 function renderMovers(){ const map={'up-d':'rank_up_daily','up-w':'rank_up_weekly','down-d':'rank_down_daily','down-w':'rank_down_weekly'};
   for (const [id,key] of Object.entries(map)){ const list=DATA.ranking[key]||[];

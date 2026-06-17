@@ -113,6 +113,43 @@ DEFAULT_EXIT = {
     "max_hold":   40,
 }
 
+# Cross-sectional rotation portfolio (the long/short top-N sim). The per-trade
+# `_simulate` above buys *every* sector that flashes ROTATE IN — it can't express
+# the RANKING edge (ROTATE IN beats ROTATE OUT by ~2–3% at +10d, which held up
+# out-of-sample). This portfolio does: long the top-conviction ROTATE INs, short
+# the ROTATE OUTs, equal-weight within each leg, rebalanced as ranks/calls change,
+# gated flat in a concentration regime. The market-neutral spread (long − short)
+# is the pure ranking edge, independent of market direction.
+LONG_CALLS  = ("ROTATE IN",)
+SHORT_CALLS = ("ROTATE OUT",)
+
+DEFAULT_PORTFOLIO = {
+    "enabled": True,
+    "mode":    "long_short",   # long_short | long_only | short_only | long_hedged
+    "n_long":  3,
+    "n_short": 3,
+    "gate":    True,           # flatten when the rotation regime is off (no-lookahead)
+}
+
+# long_hedged shorts the BENCHMARK (not the bottom-N sectors) against the long
+# book. The signal is a RELATIVE edge (excess vs SPY), so shorting absolute-price
+# ROTATE OUT sectors gets run over by market beta in a bull tape — they lag SPY
+# yet still rise. Hedging with the same benchmark the excess is measured against
+# pays off when a long merely OUTPERFORMS, which is what the call actually claims.
+PORTFOLIO_MODES = ("long_short", "long_only", "short_only", "long_hedged")
+
+
+def _portfolio_cfg(raw):
+    cfg = dict(DEFAULT_PORTFOLIO)
+    if raw:
+        cfg.update({k: raw[k] for k in raw if k in DEFAULT_PORTFOLIO})
+    cfg["mode"]    = cfg["mode"] if cfg["mode"] in PORTFOLIO_MODES else "long_short"
+    cfg["n_long"]  = max(1, int(cfg["n_long"]))
+    cfg["n_short"] = max(1, int(cfg["n_short"]))
+    cfg["gate"]    = bool(cfg["gate"])
+    cfg["enabled"] = bool(cfg["enabled"])
+    return cfg
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -476,6 +513,397 @@ def _equity_curve(trades, close_df, spy_close, idx):
 
 
 # ---------------------------------------------------------------------------
+# Cross-sectional rotation portfolio (long/short top-N)
+# ---------------------------------------------------------------------------
+
+def _state_panels(calls, idx):
+    """Dense [idx × ticker] panels of (call, conviction) from `replay_calls`'
+    per-date timelines. replay emits one row per window-end bar, so each ticker's
+    series is dense over its coverage; reindex+ffill carries the last known call
+    onto the full price index."""
+    call_cols, conv_cols = {}, {}
+    for tk, timeline in calls.items():
+        if not timeline:
+            continue
+        tl_idx = pd.DatetimeIndex(sorted(timeline))
+        call_cols[tk] = pd.Series([timeline[d]["call"] for d in tl_idx],
+                                  index=tl_idx).reindex(idx).ffill()
+        conv_cols[tk] = pd.Series([timeline[d].get("conviction") for d in tl_idx],
+                                  index=tl_idx, dtype="float64").reindex(idx).ffill()
+    return pd.DataFrame(call_cols, index=idx), pd.DataFrame(conv_cols, index=idx)
+
+
+def _leg_weights(call_df, conv_df, cfg):
+    """Per-date equal-weight target weights, long (+) and short (−). Long leg = the
+    top `n_long` LONG_CALLS ranked by conviction (desc); short leg = the `n_short`
+    SHORT_CALLS ranked by most-negative conviction (asc). Each row sums to ≤1 per
+    leg (fewer than N qualifying ⇒ a smaller, still-equal-weight book)."""
+    idx, syms = call_df.index, list(call_df.columns)
+    long_w  = pd.DataFrame(0.0, index=idx, columns=syms)
+    short_w = pd.DataFrame(0.0, index=idx, columns=syms)
+    want_long  = cfg["mode"] in ("long_short", "long_only", "long_hedged")
+    want_short = cfg["mode"] in ("long_short", "short_only", "long_hedged")
+    for d in idx:
+        call_row, conv_row = call_df.loc[d], conv_df.loc[d]
+        if want_long:
+            cand = conv_row[call_row.isin(LONG_CALLS)].dropna().sort_values(ascending=False)
+            picks = cand.head(cfg["n_long"]).index
+            if len(picks):
+                long_w.loc[d, picks] = 1.0 / len(picks)
+        if want_short:
+            cand = conv_row[call_row.isin(SHORT_CALLS)].dropna().sort_values(ascending=True)
+            picks = cand.head(cfg["n_short"]).index
+            if len(picks):
+                short_w.loc[d, picks] = 1.0 / len(picks)
+    return long_w, short_w
+
+
+def _rotation_portfolio(calls, close_df, bench_close, idx, cfg, rotation):
+    """Cross-sectional rotation sim: long the top-conviction ROTATE INs, short the
+    ROTATE OUTs (equal-weight within each leg), rebalanced daily as the calls/ranks
+    change, gated flat when rotation is off. Marks close-to-close on the bar AFTER
+    the call (decision-at-close → `shift(1)`, no lookahead). Returns three equity
+    curves — the chosen mode, the long-only leg, and the market-neutral spread
+    (long − short, the pure ranking edge) — plus a leg-return decomposition that
+    answers whether the edge lives in the longs, the shorts, or the spread."""
+    call_df, conv_df = _state_panels(calls, idx)
+    syms = [c for c in call_df.columns if c in close_df.columns]
+    if not syms:
+        return None
+    call_df, conv_df = call_df[syms], conv_df[syms]
+    dret = close_df.reindex(columns=syms).pct_change(fill_method=None)
+
+    long_w, short_w = _leg_weights(call_df, conv_df, cfg)
+
+    gated = False
+    if cfg["gate"] and rotation is not None and len(rotation):
+        off = (rotation.reindex(idx).ffill() == "off")
+        off_dates = off[off].index
+        long_w.loc[off_dates] = 0.0
+        short_w.loc[off_dates] = 0.0
+        gated = True
+
+    # no-lookahead: weights decided at a bar's close earn that bar→next close-to-close.
+    lw, sw = long_w.shift(1).fillna(0.0), short_w.shift(1).fillna(0.0)
+    long_ret  = (lw * dret).sum(axis=1)
+    short_ret = (sw * dret).sum(axis=1)
+    spread_ret = long_ret - short_ret
+
+    # benchmark hedge: short $1 of the benchmark for every $1 of long book (its gross
+    # exposure, 0/1), so the hedged leg earns long − benchmark = the relative edge the
+    # excess study measures, beta-removed (vs spread_ret, which shorts ROTATE OUT
+    # sectors and so eats full market beta on the wrong side in a bull tape).
+    bench_dret = bench_close.reindex(idx).ffill().pct_change(fill_method=None)
+    long_gross = long_w.sum(axis=1).shift(1).fillna(0.0)
+    hedged_ret = long_ret - long_gross * bench_dret
+
+    port_ret = {"long_only": long_ret, "short_only": -short_ret,
+                "long_hedged": hedged_ret}.get(cfg["mode"], spread_ret)
+
+    n_long, n_short = (lw > 0).sum(axis=1), (sw > 0).sum(axis=1)
+    invested = {"long_only":   n_long > 0,
+                "long_hedged": n_long > 0,
+                "short_only":  n_short > 0}.get(cfg["mode"], (n_long + n_short) > 0)
+    if invested.sum() < 2:
+        return None
+
+    active = invested[invested].index
+    win = idx[(idx >= active.min()) & (idx <= active.max())]
+    curve = lambda r: (1 + r.reindex(win).fillna(0.0)).cumprod()
+    eq, eq_long, eq_short, eq_spread, eq_hedged = (
+        curve(port_ret), curve(long_ret), curve(-short_ret),
+        curve(spread_ret), curve(hedged_ret))
+
+    arr  = eq.to_numpy()
+    peak = np.maximum.accumulate(arr)
+    max_dd = float((arr / peak - 1).min()) * 100
+    ann = 252.0 / len(win)
+    pr  = port_ret.reindex(win).fillna(0.0)
+    sharpe = (pr.mean() / pr.std() * math.sqrt(252)) if pr.std() > 0 else None
+
+    bench = bench_close.reindex(win).ffill()
+    bench = bench / bench.iloc[0]
+    inv_win = invested.reindex(win).fillna(False)
+    matched = (1 + bench.pct_change().fillna(0.0) * inv_win.astype(float)).cumprod()
+
+    turnover = ((long_w.diff().abs().sum(axis=1) + short_w.diff().abs().sum(axis=1)) / 2.0)
+    tot = lambda c: _num((c.iloc[-1] - 1) * 100)
+    return {
+        "config": {"mode": cfg["mode"], "n_long": cfg["n_long"],
+                   "n_short": cfg["n_short"], "gate": cfg["gate"]},
+        "dates":     [d.strftime("%Y-%m-%d") for d in win],
+        "strategy":  [_num(v) for v in eq.to_numpy()],
+        "long_only": [_num(v) for v in eq_long.to_numpy()],
+        "spread":    [_num(v) for v in eq_spread.to_numpy()],
+        "hedged":    [_num(v) for v in eq_hedged.to_numpy()],
+        "benchmark": [_num(v) for v in bench.to_numpy()],
+        "benchmark_matched": [_num(v) for v in matched.to_numpy()],
+        "total_return":  tot(eq),
+        "long_return":   tot(eq_long),
+        "short_return":  tot(eq_short),
+        "spread_return": tot(eq_spread),
+        "hedged_return": tot(eq_hedged),
+        "cagr":          _num((arr[-1] ** ann - 1) * 100),
+        "max_drawdown":  _num(max_dd),
+        "sharpe":        _num(sharpe, 2),
+        "bench_total_return":   _num((bench.iloc[-1] - 1) * 100),
+        "bench_matched_return": _num((matched.iloc[-1] - 1) * 100),
+        "avg_n_long":    _num(n_long.reindex(win)[inv_win].mean(), 2),
+        "avg_n_short":   _num(n_short.reindex(win)[inv_win].mean(), 2),
+        "time_in_market": _num(inv_win.mean() * 100, 1),
+        "avg_turnover":  _num(turnover.reindex(win).fillna(0.0).mean() * 100, 1),
+        "gated":         gated,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Take-profit ladders — scale out of a ROTATE IN instead of a binary exit
+# ---------------------------------------------------------------------------
+#
+# Each trade trims to 20/40/60/80/100% over five rungs; we compare four ways to
+# TRIGGER the rungs, head-to-head over the SAME entries (only the exit mechanic
+# changes — a controlled test). Honest expectation: the late-cycle calls are
+# CONTINUATION (⚠️ w5 ext ≈ +1.9% at +10d), so trimming into them trades total
+# return for lower drawdown; this is exit-side risk management, not entry edge.
+FIB_LOOKBACK = 20                       # bars back for the fib impulse-leg anchor (swing low)
+FIB_MULTS    = (0.618, 1.0, 1.618, 2.0, 2.618)
+# `calls` ladder: each escalating late-cycle call caps the REMAINING size (so a
+# skipped rung still trims down to that ceiling when a later call fires).
+_CALLS_CEILING = {"⚠️ w3 extended": 0.8, "⚠️ w5 extended": 0.6,
+                  "ROTATE OUT": 0.4, "AVOID": 0.2}
+TP_TRIGGERS = [
+    ("full",     "Full exit (baseline)"),
+    ("calls",    "Late-cycle call ladder"),
+    ("post_out", "Scale out after ROTATE OUT"),
+    ("fib",      "Fib extension targets"),
+]
+
+
+def _onset_bars(events, idx, lag, n):
+    """[(entry_bar, call)] for a symbol's onsets, mapped to the no-lookahead bar
+    the call can first be acted on (searchsorted(date + lag))."""
+    out = []
+    for d, call, _ in events:
+        b = int(idx.searchsorted(d + lag, side="right"))
+        if b < n:
+            out.append((b, call))
+    return out
+
+
+def _symbol_entries(onset_bars, max_hold, n):
+    """ROTATE IN entry bars + each trade's terminal cap = min(max_hold, the bar
+    before the next entry, last bar). Caps make trades non-overlapping per symbol
+    AND identical across TP variants (only the exit differs)."""
+    ins = [b for b, call in onset_bars if call == "ROTATE IN"]
+    out = []
+    for j, ei in enumerate(ins):
+        nxt = ins[j + 1] if j + 1 < len(ins) else n
+        out.append((ei, min(ei + max_hold, nxt - 1, n - 1)))
+    return out
+
+
+def _tp_schedule(trigger, ei, terminal, entry_px, o, h, l, c, onset_bars):
+    """→ [(bar, frac_sold, fill_px)] for one trade, fracs summing to 1.0, every bar
+    in (ei, terminal]. `full` exits 100% on the first ROTATE OUT/AVOID (else the
+    cap); `calls` trims to each escalating call's ceiling; `post_out` holds full
+    through the warnings then sells 20%/bar for 5 bars once an exit call fires;
+    `fib` sells 20% as the high tags each Fibonacci extension of the entry leg."""
+    fill = lambda b: c[b] if np.isfinite(c[b]) and c[b] > 0 else o[b]
+    after = [(b, call) for b, call in onset_bars if ei < b <= terminal]
+    first_exit = next((b for b, call in after if call in EXIT_CALLS), terminal)
+
+    if trigger == "calls":
+        sched, remaining = [], 1.0
+        for b, call in after:
+            cap = _CALLS_CEILING.get(call)
+            if cap is not None and remaining > cap + 1e-9:
+                sched.append((b, remaining - cap, fill(b)))
+                remaining = cap
+                if remaining <= 1e-9:
+                    break
+        if remaining > 1e-9:
+            sched.append((terminal, remaining, fill(terminal)))
+        return sched
+
+    if trigger == "post_out":
+        ob = next((b for b, call in after if call in EXIT_CALLS), None)
+        if ob is None:
+            return [(terminal, 1.0, fill(terminal))]
+        sched, remaining = [], 1.0
+        for k in range(5):
+            b = ob + k
+            if k == 4 or b >= terminal:
+                bb = min(b, terminal)
+                sched.append((bb, remaining, fill(bb)))
+                return sched
+            sched.append((b, 0.2, fill(b)))
+            remaining -= 0.2
+        return sched
+
+    if trigger == "fib":
+        seg = l[max(0, ei - FIB_LOOKBACK):ei]
+        anchor = np.nanmin(seg) if seg.size else np.nan
+        leg = (entry_px - anchor) if np.isfinite(anchor) else np.nan
+        if not (np.isfinite(leg) and leg > 0):
+            return [(first_exit, 1.0, fill(first_exit))]   # no leg → exit on call/cap
+        targets = [entry_px + leg * m for m in FIB_MULTS]
+        sched, remaining, ti = [], 1.0, 0
+        for b in range(ei + 1, first_exit + 1):
+            while ti < len(targets) and np.isfinite(h[b]) and h[b] >= targets[ti] and remaining > 1e-9:
+                sched.append((b, 0.2, targets[ti]))
+                remaining -= 0.2
+                ti += 1
+        if remaining > 1e-9:
+            sched.append((first_exit, remaining, fill(first_exit)))
+        return sched
+
+    # "full" baseline
+    return [(first_exit, 1.0, fill(first_exit))]
+
+
+def _simulate_scaled(calls, frames, idx, cfg, lag, trigger):
+    """Replay the SAME ROTATE IN entries, exiting via the `trigger` TP ladder. Each
+    trade carries a blended (fraction-weighted) return + its fractional step
+    schedule for the equity curve."""
+    n, trades = len(idx), []
+    for tk, (o, h, l, c) in frames.items():
+        events = _onsets(calls.get(tk, {}))
+        onset_bars = _onset_bars(events, idx, lag, n)
+        for ei, terminal in _symbol_entries(onset_bars, cfg["max_hold"], n):
+            if terminal <= ei:
+                continue
+            entry_px = o[ei]
+            if not np.isfinite(entry_px) or entry_px <= 0:
+                continue
+            sched = _tp_schedule(trigger, ei, terminal, entry_px, o, h, l, c, onset_bars)
+            ret, exit_bar, steps, ok = 0.0, ei, [], True
+            for b, frac, px in sched:
+                if not np.isfinite(px) or px <= 0:
+                    ok = False
+                    break
+                ret += frac * (px / entry_px - 1)
+                exit_bar = max(exit_bar, b)
+                steps.append((b, frac))
+            if not ok or not steps:
+                continue
+            trades.append({
+                "symbol": tk, "entry_bar": ei, "exit_bar": exit_bar,
+                "entry_ts": idx[ei], "exit_ts": idx[exit_bar],
+                "return_pct": _num(ret * 100), "bars_held": int(exit_bar - ei + 1),
+                "exit_reason": trigger, "steps": steps,
+            })
+    return trades
+
+
+def _scaled_equity_curve(trades, close_df, bench_close, idx):
+    """Fraction-aware equal-weight daily mark: a position contributes its REMAINING
+    fraction each day (generalises the boolean `held` curve — full size reproduces
+    it). Returns the equity series + total/CAGR/maxDD/Sharpe/time-in-market."""
+    if not trades:
+        return None
+    lo = min(t["entry_bar"] for t in trades)
+    hi = max(t["exit_bar"] for t in trades)
+    win = idx[lo:hi + 1]
+    if len(win) < 2:
+        return None
+    syms = sorted({t["symbol"] for t in trades})
+    col = {s: i for i, s in enumerate(syms)}
+    W = np.zeros((len(win), len(syms)))
+    for t in trades:
+        j, ei = col[t["symbol"]], t["entry_bar"]
+        sold_at = defaultdict(float)
+        for b, frac in t["steps"]:
+            sold_at[b] += frac
+        cum = 0.0
+        for di in range(ei + 1, t["exit_bar"] + 1):
+            cum += sold_at.get(di - 1, 0.0)        # shares sold by the prior close
+            frac_d = 1.0 - cum
+            if frac_d > 1e-9:
+                W[di - lo, j] += frac_d
+
+    sym_ret = close_df.reindex(index=win, columns=syms).pct_change(fill_method=None).to_numpy()
+    finite  = np.isfinite(sym_ret)
+    num     = np.where(finite, W * sym_ret, 0.0).sum(axis=1)
+    gross   = np.where(finite, W, 0.0).sum(axis=1)
+    port    = np.where(gross > 0, num / np.where(gross > 0, gross, 1.0), 0.0)
+    eq      = np.cumprod(1 + port)
+
+    peak   = np.maximum.accumulate(eq)
+    max_dd = float((eq / peak - 1).min()) * 100
+    ann    = 252.0 / len(win)
+    invested = W.sum(axis=1) > 0
+    sd = port.std()
+    sharpe = (port.mean() / sd * math.sqrt(252)) if sd > 0 else None
+
+    bench = bench_close.reindex(win).ffill()
+    bench = bench / bench.iloc[0]
+    matched = (1 + bench.pct_change().fillna(0.0).to_numpy() * invested.astype(float)).cumprod()
+    return {
+        "dates":        [d.strftime("%Y-%m-%d") for d in win],
+        "strategy":     [_num(v) for v in eq],
+        "benchmark_matched": [_num(v) for v in matched],
+        "total_return": _num((eq[-1] - 1) * 100),
+        "cagr":         _num((eq[-1] ** ann - 1) * 100),
+        "max_drawdown": _num(max_dd),
+        "sharpe":       _num(sharpe, 2),
+        "bench_matched_return": _num((matched[-1] - 1) * 100),
+        "time_in_market": _num(invested.mean() * 100, 1),
+    }
+
+
+def _tp_comparison(calls, frames, close_df, bench_close, idx, cfg, lag):
+    """Run every TP trigger over the SAME entries and tabulate which exit wins on
+    return / drawdown / Sharpe. Cheap — reuses the already-loaded calls + frames."""
+    rows, curves = [], {}
+    for key, label in TP_TRIGGERS:
+        trades = _simulate_scaled(calls, frames, idx, cfg, lag, key)
+        eqc = _scaled_equity_curve(trades, close_df, bench_close, idx)
+        if eqc is None:
+            continue
+        ts = _trade_stats(trades)
+        rows.append({
+            "key": key, "label": label,
+            "total_return": eqc["total_return"], "max_drawdown": eqc["max_drawdown"],
+            "sharpe": eqc["sharpe"], "cagr": eqc["cagr"],
+            "time_in_market": eqc["time_in_market"], "bench_matched_return": eqc["bench_matched_return"],
+            "win_rate": ts.get("win_rate"), "profit_factor": ts.get("profit_factor"),
+            "avg_return": ts.get("avg_return"), "n_trades": ts.get("n_trades"),
+            "avg_bars_held": ts.get("avg_bars_held"),
+        })
+        curves[key] = {"dates": eqc["dates"], "equity": eqc["strategy"]}
+    if not rows:
+        return None
+
+    # equity overlay aligned to a common window (each strategy flatlines in cash
+    # after it fully exits — ffill); SPY-always as a shared reference.
+    all_dates = sorted({d for c in curves.values() for d in c["dates"]})
+    overlay = {"dates": all_dates, "series": {}}
+    for key, c in curves.items():
+        s = pd.Series(c["equity"], index=pd.to_datetime(c["dates"]))
+        s = s.reindex(pd.to_datetime(all_dates)).ffill().fillna(1.0)
+        overlay["series"][key] = [_num(v) for v in s.to_numpy()]
+    sp = bench_close.reindex(pd.to_datetime(all_dates)).ffill()
+    if not sp.dropna().empty:
+        sp = sp / sp.dropna().iloc[0]
+        overlay["spy"] = [_num(v) for v in sp.to_numpy()]
+
+    pick = lambda metric, best: max(
+        (r for r in rows if r.get(metric) is not None),
+        key=lambda r: r[metric] if best == "max" else -r[metric], default=None)
+    best = {
+        "return":   (pick("total_return", "max") or {}).get("key"),
+        "drawdown": (pick("max_drawdown", "max") or {}).get("key"),   # closest to 0
+        "sharpe":   (pick("sharpe", "max") or {}).get("key"),
+    }
+    return {"rows": rows, "overlay": overlay, "best": best,
+            "note": ("Same ROTATE IN entries across all four — only the exit ladder "
+                     "changes. Late-cycle calls are continuation, so trimming into "
+                     "them trades return for drawdown; read return AND drawdown/Sharpe "
+                     "together. Fib rungs fill at the target price; the equity curve "
+                     "marks close-to-close (a small intrabar-fill nuance).")}
+
+
+# ---------------------------------------------------------------------------
 # Data assembly (shared by run_backtest and the walk-forward search)
 # ---------------------------------------------------------------------------
 
@@ -495,8 +923,10 @@ def _load(interval, params=None, tickers=DEFAULT_TICKERS):
 # ---------------------------------------------------------------------------
 
 def run_backtest(interval="1d", tail=6, exit_cfg=None, params=None,
-                 universe=DEFAULT_UNIVERSE, benchmark=DEFAULT_BENCHMARK):
+                 universe=DEFAULT_UNIVERSE, benchmark=DEFAULT_BENCHMARK,
+                 portfolio=None):
     cfg = _exit_cfg(exit_cfg)
+    pcfg = _portfolio_cfg(portfolio)
     uni_key, tickers = _resolve_universe(universe)
     series, ohlc, idx, close, spy_close, spy_arr = _load(interval, params, tickers)
     if not series:
@@ -528,6 +958,16 @@ def run_backtest(interval="1d", tail=6, exit_cfg=None, params=None,
     equity = _equity_curve(trades, close, bench_close, idx)
     contributions = _symbol_contributions(trades)
 
+    # cross-sectional long/short top-N rotation portfolio (reuses the calls/close
+    # already loaded — no extra fetch). Monetizes the ranking edge the long-only
+    # trade sim above can't express.
+    rotation_portfolio = (_rotation_portfolio(calls, close, bench_close, idx, pcfg,
+                                              rot_series)
+                          if pcfg["enabled"] else None)
+
+    # take-profit ladder comparison — same entries, four exit mechanics, head-to-head.
+    tp_comparison = _tp_comparison(calls, frames, close, bench_close, idx, cfg, lag)
+
     rets = [t["return_pct"] for t in trades if t["return_pct"] is not None]
     hist = None
     if rets:
@@ -544,6 +984,7 @@ def run_backtest(interval="1d", tail=6, exit_cfg=None, params=None,
             "n_tickers": len(frames), "params": params or DEFAULTS,
             "universe": uni_key, "universe_label": UNIVERSES[uni_key]["label"],
             "benchmark": bench_sym, "benchmark_label": BENCHMARKS[bench_sym],
+            "portfolio": pcfg,
             "start": idx[0].strftime("%Y-%m-%d") if len(idx) else None,
             "end":   idx[-1].strftime("%Y-%m-%d") if len(idx) else None,
         },
@@ -553,6 +994,8 @@ def run_backtest(interval="1d", tail=6, exit_cfg=None, params=None,
         "contributions":  contributions,
         "stats":          stats,
         "equity":         equity,
+        "rotation_portfolio": rotation_portfolio,
+        "tp_comparison":  tp_comparison,
         "histogram":      hist,
         "trades":         trade_view,
         "n_trades_total": len(trades),
@@ -568,6 +1011,14 @@ def run_backtest(interval="1d", tail=6, exit_cfg=None, params=None,
             f"Excess + equity are scored vs {BENCHMARKS[bench_sym]}; the rotation "
             "regime (on/off) is RSP/SPY vs its trend — a concentration regime is "
             "one a rotation signal structurally can't beat.",
+            "Rotation portfolio: long the top-conviction ROTATE INs / short the "
+            "ROTATE OUTs (equal-weight per leg), marked close-to-close on the bar "
+            "after the call (decision-at-close, no lookahead — 1 bar tighter than "
+            "the open-entry trade sim above); costs not modelled (see avg turnover). "
+            "The market-neutral spread (long − short) is the pure ranking edge; the "
+            "long_hedged mode shorts the BENCHMARK instead (long − SPY), which "
+            "matches the relative excess the call claims without eating market beta "
+            "on a short-sector leg — the right book for a bull tape.",
         ],
     }
 
@@ -584,7 +1035,8 @@ _GRID = {
 
 
 def walk_forward_search(interval="1d", tail=6, exit_cfg=None, folds=4,
-                        universe=DEFAULT_UNIVERSE, benchmark=DEFAULT_BENCHMARK):
+                        universe=DEFAULT_UNIVERSE, benchmark=DEFAULT_BENCHMARK,
+                        portfolio=None):
     """Expanding-window walk-forward over the wave-engine params. Per fold: pick
     the in-sample-best combo, score it out-of-sample. Recommend the combo with
     the best mean OOS separation across folds (robust, not the global optimum)."""
@@ -655,7 +1107,8 @@ def walk_forward_search(interval="1d", tail=6, exit_cfg=None, folds=4,
     recommended, best_oos = max(scored, key=lambda x: x[1])
 
     report = run_backtest(interval=interval, tail=tail, exit_cfg=exit_cfg,
-                          params=recommended, universe=uni_key, benchmark=bench_sym)
+                          params=recommended, universe=uni_key, benchmark=bench_sym,
+                          portfolio=portfolio)
     report["walk_forward"] = {
         "folds":          fold_rows,
         "recommended":    recommended,

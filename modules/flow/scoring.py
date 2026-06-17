@@ -126,6 +126,14 @@ def _confluence_alignment(direction, confluence):
     if confluence.get("golden_pocket"):
         score += 0.25 * want; tags.append("golden pocket")
 
+    # accumulation/distribution footprint: net institutional buying (A/B) agrees with
+    # bullish flow, net selling (D/E) agrees with bearish. Soft, never a gate.
+    rating = (confluence.get("accumulation") or "").upper()
+    if rating in ("A", "B"):
+        score += 0.30 * want; tags.append("accum " + rating)
+    elif rating in ("D", "E"):
+        score += 0.30 * (-want); tags.append("distrib " + rating)
+
     return max(-1.0, min(1.0, score)), tags
 
 

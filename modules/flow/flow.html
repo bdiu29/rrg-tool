@@ -86,6 +86,7 @@
   <a class="nav-link" href="/rrg.html">RRG →</a>
   <a class="nav-link" href="/screener.html">Screener →</a>
   <a class="nav-link" href="/rankings.html">Rankings →</a>
+  <a class="nav-link" href="/canslim.html">CANSLIM →</a>
 </div>
 
 <header>
@@ -148,6 +149,12 @@ function confluenceChips(c) {
   if (c.regime) out.push(`<span class="chip">${c.regime.toLowerCase()}</span>`);
   if (c.vp_zone) out.push(`<span class="chip ${c.vp_zone}">${c.vp_zone}</span>`);
   if (c.golden_pocket) out.push(`<span class="chip discount">golden pocket</span>`);
+  if (c.accumulation) {
+    const acc = c.accumulation.toUpperCase();
+    const cls = (acc === 'A' || acc === 'B') ? 'discount' : (acc === 'D' || acc === 'E') ? 'premium' : '';
+    const lab = (acc === 'A' || acc === 'B') ? 'accum ' + acc : (acc === 'D' || acc === 'E') ? 'distrib ' + acc : 'A/D ' + acc;
+    out.push(`<span class="chip ${cls}">${lab}</span>`);
+  }
   return out.join(' ');
 }
 

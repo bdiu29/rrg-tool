@@ -29,7 +29,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-from modules.confluence import flags, exhaustion, volume_profile
+from modules.confluence import flags, exhaustion, volume_profile, accumulation
 from modules.confluence import wave as wave_eng
 
 # yfinance logs every transient bulk-download hiccup (e.g. the intermittent
@@ -100,6 +100,9 @@ W_CLEAN     = 10.0   # clean (unambiguous) wave count
 W_VOL_EXH   = 14.0   # volume buyer/seller exhaustion (× TF weight) — topping/bottoming tell
 W_VOL_PROFILE = 12.0 # volume-profile structure (× signed strength × TF weight) — price in
                      # discount/premium vs its value area; a value-buy/value-sell confluence
+W_ACCUM     = 13.0   # accumulation/distribution (× signed strength × TF weight) — U/D volume
+                     # ratio + A/D-line divergence = the institutional buy/sell footprint.
+                     # LIVE-only (real sectors), trailing/no-lookahead → promotable to backtest.
 
 # Flag contribution is now EMPIRICAL + REGIME-AWARE (replaced the flat W_FLAG=25):
 # the weight is the flag's measured edge `(win_rate − 0.5)`, scaled by W_FLAG_EDGE,
@@ -437,6 +440,14 @@ def _conviction(ws, params=None):
     if vp:
         vp_s, vp_lab = volume_profile.contribution(vp)
         add(W_VOL_PROFILE * vp_s * TF_WEIGHT["1wk"], vp_lab or "vol profile")
+    # accumulation/distribution (the symbol's own price+volume): net buying (U/D > 1,
+    # rising A/D line, more accumulation days) is bullish, net selling bearish; an
+    # A/D-vs-price divergence amplifies. The "big money" demand tell the wave engine
+    # (RS line, no volume) and the location-only volume profile can't see.
+    ac = ws.get("accumulation")
+    if ac:
+        ac_s, ac_lab = accumulation.contribution(ac)
+        add(W_ACCUM * ac_s * TF_WEIGHT["1wk"], ac_lab or "accumulation")
     # prior wave-4 confluence on a wave-C bottom
     if wave == "wave-C" and np.isfinite(cur) and np.isfinite(c_hi) and cur <= c_hi \
             and np.isfinite(w4) and abs(w4) > 1e-9 and abs(cur - w4) <= 0.10 * abs(w4):
@@ -750,6 +761,34 @@ def volume_profile_for(symbols, period=FLAG_WR_PERIOD):
     return out
 
 
+def accumulation_for(symbols, period=FLAG_WR_PERIOD):
+    """Current accumulation/distribution read per symbol from daily OHLCV (one cached
+    `fetch_ohlc`, shared with the exhaustion/profile reads → no extra download).
+    Returns {symbol: read dict | None}. Fail-soft → {}. A LIVE-only conviction
+    refinement (real sectors only — synthetic theme indices carry no volume); the
+    U/D ratio + A/D line are trailing/no-lookahead, so it could later be promoted into
+    the backtest (same status as volume_profile)."""
+    symbols = [s for s in symbols if s]
+    if not symbols:
+        return {}
+    try:
+        ohlc = fetch_ohlc(symbols, period=period)
+    except Exception:
+        return {}
+    high, low, close, vol = (ohlc.get("high"), ohlc.get("low"),
+                             ohlc.get("close"), ohlc.get("volume"))
+    if close is None or vol is None:
+        return {}
+    out = {}
+    for s in symbols:
+        if s in close.columns and s in vol.columns and s in high.columns and s in low.columns:
+            try:
+                out[s] = accumulation.current(high[s], low[s], close[s], vol[s])
+            except Exception:
+                out[s] = None
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Series + per-tail evaluation
 # ---------------------------------------------------------------------------
@@ -841,15 +880,16 @@ def compute_series(tickers, benchmark, interval, asof=None, params=None, close=N
 
 
 def evaluate_tail(window, params=None, flag_wr=None, regime=None, vol_exh=None,
-                  rotation=None, vol_profile=None):
+                  rotation=None, vol_profile=None, accum_read=None):
     """Compute the quadrant + Elliott-wave call/scores for one tail window. The
     quadrant/heading/accum/distrib still come from the SIGNAL coords (chart
     geometry + call-card ranking); the call itself is driven by the wave/Fib
     state read off the head row's precomputed wave features.
 
     `flag_wr` ({"bull","bull_n","bear","bear_n"}), `regime` (HEALTHY/NEUTRAL/
-    DETERIORATING), `vol_exh` ("buyer"/"seller"), and `vol_profile` (a confluence
-    `volume_profile.current` read) are LIVE-only conviction refinements (per-symbol
+    DETERIORATING), `vol_exh` ("buyer"/"seller"), `vol_profile` (a confluence
+    `volume_profile.current` read), and `accum_read` (an `accumulation.current`
+    read) are LIVE-only conviction refinements (per-symbol
     stats have lookahead in a backtest). `rotation` ("on"/"off", the RSP/SPY regime)
     is no-lookahead, so it's passed in BOTH live and the backtest to gate entries in
     a concentration regime. All default None."""
@@ -895,6 +935,7 @@ def evaluate_tail(window, params=None, flag_wr=None, regime=None, vol_exh=None,
         "vol_exh":    vol_exh,
         "rotation":   rotation,
         "vol_profile": vol_profile,
+        "accumulation": accum_read,   # A/D read dict (NOT the _accum ranking score below)
     }
     conviction, factors = _conviction(ws, params)
     ws["_score"] = conviction                 # avoid recomputing inside the call
@@ -927,6 +968,10 @@ def evaluate_tail(window, params=None, flag_wr=None, regime=None, vol_exh=None,
         "poc":           (vol_profile or {}).get("poc"),
         "vah":           (vol_profile or {}).get("vah"),
         "val":           (vol_profile or {}).get("val"),
+        # accumulation/distribution (None in the backtest / themes — live-only)
+        "ad_rating":     (accum_read or {}).get("rating"),
+        "ud_ratio":      (accum_read or {}).get("ud_ratio"),
+        "ad_divergence": (accum_read or {}).get("divergence"),
         "dir":           _direction(ratios, moments),
         "accum":         accum,
         "distrib":       distrib,

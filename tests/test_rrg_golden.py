@@ -54,7 +54,8 @@ def _compute_all():
     so the MTF blend executes."""
     panel = _panel()
     keep = ("_fetch_close", "current_regime", "rotation_regime",
-            "exhaustion_for", "flag_win_rates_for", "volume_profile_for")
+            "exhaustion_for", "flag_win_rates_for", "volume_profile_for",
+            "accumulation_for")
     orig = {k: getattr(signal, k) for k in keep}
     try:
         signal._fetch_close = lambda symbols, interval, period=signal.PERIOD: \
@@ -64,6 +65,7 @@ def _compute_all():
         signal.exhaustion_for = lambda syms, period=None: {}
         signal.flag_win_rates_for = lambda syms, period=None: {}
         signal.volume_profile_for = lambda syms, period=None: {}
+        signal.accumulation_for = lambda syms, period=None: {}
         signal._PRICE_CACHE.clear()
         out = {iv: compute_rrg(_TICKERS, BENCHMARK, iv, tail=6) for iv in ("1d", "1wk")}
     finally:
