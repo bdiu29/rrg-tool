@@ -7,8 +7,10 @@ function. To add a new module, create the folder and call register_routes here.
 """
 
 import json
+import mimetypes
 import os
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 from modules import Response
@@ -90,6 +92,29 @@ register_research(router)
 
 
 # ---------------------------------------------------------------------------
+# Static assets — shared UI helpers + README screenshots
+# ---------------------------------------------------------------------------
+
+_ROOT = Path(__file__).resolve().parent
+_ASSETS = (_ROOT / "assets").resolve()
+
+
+def _asset_response(path):
+    if not path.startswith("/assets/"):
+        return None
+    name = path[len("/assets/"):]
+    target = (_ASSETS / name).resolve()
+    try:
+        target.relative_to(_ASSETS)
+    except ValueError:
+        return Response.error("not found", 404)
+    if not target.is_file():
+        return Response.error("not found", 404)
+    ctype = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+    return Response(target.read_bytes(), 200, ctype)
+
+
+# ---------------------------------------------------------------------------
 # HTTP server
 # ---------------------------------------------------------------------------
 
@@ -113,6 +138,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def _handle(self, method):
         parsed  = urlparse(self.path)
+        if method == "GET":
+            asset = _asset_response(parsed.path)
+            if asset is not None:
+                self._respond(asset)
+                return
         req     = Request(
             method  = method,
             path    = parsed.path,

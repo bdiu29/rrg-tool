@@ -2,6 +2,8 @@
 
 A personal market intelligence platform that runs entirely on your Mac. A tiny Python server fetches data and serves an interactive dashboard at `localhost` — no cloud, no subscriptions, no API fees for the core data. Built module by module, each a self-contained package with its own page, **culminating in an AI harness** that fuses every module's signal into one daily brief.
 
+Suggested GitHub repo name: **`market-intelligence-harness`** (the project has grown well beyond the original RRG tool).
+
 <p align="center">
   <img src="assets/chart.png" alt="RRG sector rotation chart" width="820"/>
 </p>
@@ -118,8 +120,8 @@ ALERT_EMAIL_TO=you@gmail.com
 ## Run
 
 ```bash
-cd rrg-tool
-python3 app.py
+cd market-intelligence-harness
+/usr/bin/python3 app.py
 ```
 
 Then open **http://localhost:8000**. Press `Ctrl+C` in the terminal to stop.
@@ -146,23 +148,24 @@ Then open **http://localhost:8000**. Press `Ctrl+C` in the terminal to stop.
 
 ## Screenshots
 
-Each module's README opens with a screenshot of its page (see the [Modules](#modules) table above). They live in [`assets/`](assets/); to (re)generate them on a Mac — no extra dependencies, uses Safari + the built-in `screencapture`:
+Each UI module's README opens with a screenshot of its page (see the [Modules](#modules) table above). They live in [`assets/`](assets/); to (re)generate them on a Mac — no extra dependencies, uses Safari + the built-in `screencapture`:
 
 ```bash
-python3 app.py                          # in one terminal
+/usr/bin/python3 app.py                 # in one terminal
 bash scripts/capture_screenshots.sh     # in another
 ```
 
-First run prompts for Screen Recording permission for your terminal. To also capture the **Breadth Tape** tab, enable Safari → Settings → Advanced → *Show Develop menu*, then Develop → *Allow JavaScript from Apple Events* (it degrades gracefully without it).
+First run prompts for Screen Recording permission for your terminal. The script captures the Breadth Tape via `/breadth.html?view=tape` and the Schwab page via `/schwab.html?privacy=1`, so screenshots stay reproducible and do not expose account holdings.
 
 ---
 
 ## Architecture
 
-One `modules/<name>/` folder per data domain; `app.py` owns only the HTTP server and routing (no business logic). Each module exposes a single `register_routes(router)` function and ships its own HTML frontend.
+One `modules/<name>/` folder per data domain; `app.py` owns only the HTTP server, routing, and static `/assets/...` serving (no business logic). Each module exposes a single `register_routes(router)` function and ships its own HTML frontend.
 
 ```
-app.py                  # ThreadingHTTPServer + router
+app.py                  # ThreadingHTTPServer + router + static /assets
+assets/                 # shared app-shell.js + README screenshots
 modules/
   __init__.py           # shared Response class
   home/                 # hub homepage + live status badges

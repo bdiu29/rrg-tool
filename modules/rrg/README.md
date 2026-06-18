@@ -10,6 +10,8 @@ Interactive Relative Rotation Graph for the 11 SPDR Select Sector ETFs, benchmar
 
 Open at **http://localhost:8000/rrg.html**. Works with no `.env` — it only needs Yahoo Finance, which requires no key.
 
+Price pulls are cached for 10 minutes. Transient empty Yahoo Finance responses are not cached; if a refresh comes back empty while a prior good panel exists, the page keeps serving the last good panel instead of rendering a blank RRG.
+
 ---
 
 ## What it shows

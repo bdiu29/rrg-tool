@@ -30,7 +30,7 @@ from modules import Response
 from modules.rrg import compute_rrg, BENCHMARK, DEFAULT_TICKERS, WARN_CALLS
 
 _MODULE_DIR = Path(__file__).resolve().parent
-_ROOT       = _MODULE_DIR.parent.parent   # rrg-tool/ — where .env lives
+_ROOT       = _MODULE_DIR.parent.parent   # market-intelligence-harness/ — where .env lives
 
 # ---------------------------------------------------------------------------
 # Constants

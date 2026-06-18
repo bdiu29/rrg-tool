@@ -46,7 +46,8 @@ The `interpret()` step maps a short-term extreme *through* the regime — an ove
 ## Breadth Tape — Market Monitor
 
 A second **tab** on the breadth page (toggle "Dashboard ⟷ Breadth Tape" at the top of
-**http://localhost:8000/breadth.html**) that reproduces the Stockbee-style "Market Monitor": a
+**http://localhost:8000/breadth.html**, or open **http://localhost:8000/breadth.html?view=tape**
+directly) that reproduces the Stockbee-style "Market Monitor": a
 dense daily table, newest day on top, of raw cross-sectional counts with each cell green/red
 heat-colored, plus Advancing/Declining and New-High/New-Low gauge bars and a **Copy as image**
 button (renders the tape to a PNG and writes it to the clipboard; downloads as a fallback).

@@ -2,9 +2,15 @@
 
 [← Back to main README](../../README.md)
 
+<p align="center">
+  <img src="../../assets/schwab.png" alt="Schwab account positions — privacy-mode sample table with sector signals and actions" width="800"/>
+</p>
+
 Connect your Schwab brokerage account to see your positions alongside daily RRG sector rotation signals. Each holding gets a **BUY / HOLD / SELL / WATCH / AVOID** flag derived from its sector ETF's current rotation signal.
 
 Open at **http://localhost:8000/schwab.html**. Requires Schwab developer credentials in `.env` (see [main README setup](../../README.md#one-time-setup)).
+
+For screenshots or demos, open **http://localhost:8000/schwab.html?privacy=1** to render local sample rows without calling the account endpoint.
 
 ---
 

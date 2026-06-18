@@ -534,6 +534,10 @@ _PRICE_CACHE = {}     # (interval, sorted symbols) -> (fetched_at, close_df)
 _PRICE_TTL   = 600    # seconds
 
 
+def _has_price_data(close):
+    return close is not None and not close.dropna(how="all").empty
+
+
 def _download_close(symbols, interval, period):
     """One yfinance close pull → DataFrame (one column per symbol). Handles both
     the multi-symbol (MultiIndex) and single-symbol (flat) column shapes."""
@@ -553,7 +557,7 @@ def _download_close(symbols, interval, period):
 def _fetch_close(symbols, interval, period=PERIOD):
     key = (interval, tuple(sorted(symbols)))
     hit = _PRICE_CACHE.get(key)
-    if hit and time.time() - hit[0] < _PRICE_TTL:
+    if hit and time.time() - hit[0] < _PRICE_TTL and _has_price_data(hit[1]):
         return hit[1]
     close = _download_close(list(symbols), interval, period)
     # yfinance intermittently drops a symbol or two from a bulk pull (a transient
@@ -570,7 +574,10 @@ def _fetch_close(symbols, interval, period=PERIOD):
             if s in retry.columns and not retry[s].dropna().empty:
                 close[s] = retry[s]
     close = close.dropna(how="all").ffill()
-    _PRICE_CACHE[key] = (time.time(), close)
+    if _has_price_data(close):
+        _PRICE_CACHE[key] = (time.time(), close)
+    elif hit and _has_price_data(hit[1]):
+        return hit[1]
     return close
 
 

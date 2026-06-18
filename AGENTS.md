@@ -71,12 +71,14 @@ Yahoo Finance, no key). Keys are optional and each *progressively enriches* one 
 
 ## Architecture
 
-`app.py` is a `ThreadingHTTPServer` + a tiny `(method, path) → handler` router. It owns **no
-business logic** — it imports each module's `register_routes(router)` and calls it. Threading
-is required: long-running background syncs/pollers must not block the dashboard.
+`app.py` is a `ThreadingHTTPServer` + a tiny `(method, path) → handler` router, plus static
+serving for `/assets/...` (shared UI helper + README screenshots). It owns **no business
+logic** — it imports each module's `register_routes(router)` and calls it. Threading is
+required: long-running background syncs/pollers must not block the dashboard.
 
 ```
-app.py                 # server + router only
+app.py                 # server + router + static /assets only
+assets/                # shared app-shell.js + README screenshots
 modules/
   __init__.py          # shared Response class (Response.json / .html / .error)
   home/                # hub homepage + live status badges

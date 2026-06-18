@@ -1015,6 +1015,10 @@ function switchView(view) {
   document.getElementById('controls-tape').style.display = isTape ? '' : 'none';
   document.querySelectorAll('.tabs button').forEach(b =>
     b.classList.toggle('active', b.dataset.view === view));
+  const url = new URL(window.location.href);
+  if (isTape) url.searchParams.set('view', 'tape');
+  else url.searchParams.delete('view');
+  history.replaceState(null, '', url.pathname + url.search);
   if (isTape && !tapeLoaded) loadTape();
 }
 
@@ -1043,9 +1047,11 @@ document.getElementById('tape-empty-sync').addEventListener('click', () => switc
   buildTapeHead();   // build the Breadth Tape column headers once (thead is static)
   await loadUniverses();
   await loadDashboard();
+  if (new URLSearchParams(window.location.search).get('view') === 'tape') switchView('tape');
   pollProgress();   // pick up any job already running
 })();
 </script>
 
+<script src="/assets/app-shell.js"></script>
 </body>
 </html>

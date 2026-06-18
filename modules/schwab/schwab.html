@@ -440,7 +440,18 @@
 // ---------------------------------------------------------------------------
 // Formatting helpers
 // ---------------------------------------------------------------------------
+const PRIVACY_MODE = new URLSearchParams(window.location.search).get('privacy') === '1';
+const DEMO_POSITIONS = [
+  { symbol:'DEMO1', description:'Sample position', asset_type:'EQUITY', quantity:120, market_value:18600, day_pnl:240, open_pnl:1280, sector_etf:'XLK', rrg_heading:'↗', rrg_quadrant:'Improving', action:'BUY' },
+  { symbol:'DEMO2', description:'Sample position', asset_type:'EQUITY', quantity:80, market_value:14200, day_pnl:-95, open_pnl:760, sector_etf:'XLI', rrg_heading:'↗', rrg_quadrant:'Leading', action:'HOLD' },
+  { symbol:'DEMO3', description:'Sample position', asset_type:'EQUITY', quantity:55, market_value:9300, day_pnl:118, open_pnl:-340, sector_etf:'XLF', rrg_heading:'↗', rrg_quadrant:'Improving', action:'BUY' },
+  { symbol:'DEMO4', description:'Sample position', asset_type:'EQUITY', quantity:140, market_value:12100, day_pnl:-64, open_pnl:390, sector_etf:'XLV', rrg_heading:'→', rrg_quadrant:'Lagging', action:'WATCH' },
+  { symbol:'DEMO5', description:'Sample position', asset_type:'EQUITY', quantity:35, market_value:7800, day_pnl:44, open_pnl:910, sector_etf:'XLY', rrg_heading:'↗', rrg_quadrant:'Improving', action:'BUY' },
+  { symbol:'DEMO6', description:'Sample position', asset_type:'EQUITY', quantity:95, market_value:10100, day_pnl:-128, open_pnl:-680, sector_etf:'XLRE', rrg_heading:'↓', rrg_quadrant:'Lagging', action:'AVOID' },
+];
+
 function fmt$(v) {
+  if (v == null || Number.isNaN(Number(v))) return '—';
   const abs = Math.abs(v);
   const s = abs >= 1e6 ? (abs / 1e6).toFixed(2) + 'M'
           : abs >= 1e3 ? (abs / 1e3).toFixed(1) + 'K'
@@ -448,10 +459,11 @@ function fmt$(v) {
   return (v < 0 ? '-$' : '$') + s;
 }
 function fmtQty(v) {
+  if (v == null || Number.isNaN(Number(v))) return '—';
   return Number.isInteger(v) ? v.toLocaleString() : v.toFixed(4);
 }
-function pnlClass(v) { return v >= 0 ? 'pos' : 'neg'; }
-function pnlSign(v)  { return v >= 0 ? '+' : ''; }
+function pnlClass(v) { return v == null ? '' : (v >= 0 ? 'pos' : 'neg'); }
+function pnlSign(v)  { return v == null ? '' : (v >= 0 ? '+' : ''); }
 
 const ACTION_CLASS = {
   BUY: 'ab-buy', HOLD: 'ab-hold', SELL: 'ab-sell',
@@ -479,6 +491,24 @@ function signalCell(pos) {
 // Render
 // ---------------------------------------------------------------------------
 function renderSummary(positions, balances) {
+  if (PRIVACY_MODE) {
+    document.getElementById('summary-row').innerHTML = `
+      <div class="summary-card">
+        <div class="card-label">Portfolio Value</div>
+        <div class="card-value">Private</div>
+        <div class="card-sub">demo screenshot mode</div>
+      </div>
+      <div class="summary-card">
+        <div class="card-label">Day P&amp;L</div>
+        <div class="card-value">Private</div>
+      </div>
+      <div class="summary-card">
+        <div class="card-label">Unrealized P&amp;L</div>
+        <div class="card-value">Private</div>
+      </div>`;
+    return;
+  }
+
   let totalMkt = 0, totalDay = 0, totalOpen = 0;
   for (const p of positions) {
     totalMkt  += p.market_value || 0;
@@ -619,6 +649,20 @@ function showAuth(status) {
 }
 
 async function init() {
+  if (PRIVACY_MODE) {
+    showPositions(true);
+    lastPositionsData = { positions: DEMO_POSITIONS, balances: {}, updated: 'privacy-mode' };
+    renderSummary(DEMO_POSITIONS, {});
+    renderTable(DEMO_POSITIONS);
+    document.getElementById('table-wrap').style.display = 'block';
+    document.getElementById('positions-status').textContent = 'demo privacy mode';
+    document.getElementById('meta-info').innerHTML = 'Screenshot<br><b>privacy mode</b>';
+    document.getElementById('refresh-btn').disabled = true;
+    document.getElementById('export-btn').disabled = true;
+    document.getElementById('disconnect-btn').style.display = 'none';
+    return;
+  }
+
   let status;
   try {
     status = await (await fetch('/api/schwab/status')).json();
@@ -704,5 +748,6 @@ document.getElementById('disconnect-btn').addEventListener('click', async () => 
 
 init();
 </script>
+<script src="/assets/app-shell.js"></script>
 </body>
 </html>

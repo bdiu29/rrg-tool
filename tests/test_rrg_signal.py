@@ -305,5 +305,26 @@ class TestComputeSeries(unittest.TestCase):
                 self.assertIn(ev["call"], valid)
 
 
+class TestPriceFetchCache(unittest.TestCase):
+    def tearDown(self):
+        signal._PRICE_CACHE.clear()
+
+    def test_empty_download_is_not_cached(self):
+        signal._PRICE_CACHE.clear()
+        empty = pd.DataFrame()
+        with mock.patch.object(signal, "_download_close", return_value=empty):
+            out = signal._fetch_close(["AAA"], "1d", "1mo")
+        self.assertTrue(out.empty)
+        self.assertNotIn(("1d", ("AAA",)), signal._PRICE_CACHE)
+
+    def test_empty_refresh_falls_back_to_last_good_cache(self):
+        idx = pd.bdate_range("2026-01-01", periods=3)
+        good = pd.DataFrame({"AAA": [10.0, 10.5, 11.0]}, index=idx)
+        signal._PRICE_CACHE[("1d", ("AAA",))] = (0.0, good)
+        with mock.patch.object(signal, "_download_close", return_value=pd.DataFrame()):
+            out = signal._fetch_close(["AAA"], "1d", "1mo")
+        pd.testing.assert_frame_equal(out, good)
+
+
 if __name__ == "__main__":
     unittest.main()
