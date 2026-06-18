@@ -25,6 +25,7 @@ LLM brief read; it never enters the scalar math.
 # dominates, leadership/rotation next, flow/news mid, screener/themes lowest.
 WEIGHTS = {
     "breadth":  30,
+    "macro":    18,
     "rrg":      20,
     "rankings": 15,
     "canslim":  15,
@@ -35,8 +36,9 @@ WEIGHTS = {
 }
 
 _HORIZON = {
-    "breadth": "position", "rrg": "swing", "rankings": "swing", "canslim": "position",
-    "news": "event", "flow": "swing", "screener": "intraday", "themes": "position",
+    "breadth": "position", "macro": "position", "rrg": "swing", "rankings": "swing",
+    "canslim": "position", "news": "event", "flow": "swing", "screener": "intraday",
+    "themes": "position",
 }
 
 # Offensive vs defensive SPDR sectors — leadership tilt = a risk-on/off read.
@@ -107,6 +109,41 @@ def vote_breadth():
                      })
     except Exception as e:
         return _fail("breadth", e)
+
+
+def vote_macro():
+    """The strategic growth×inflation backdrop (orthogonal to breadth's TACTICAL
+    regime). Direction = the probability-weighted equity tilt of the 4-quadrant
+    read (Goldilocks/Reflation supportive, Stagflation/Disinflation defensive);
+    conviction scales with |tilt| + the regime confidence. The full regime + the
+    caution indicators ride in `detail` for the brief's plain-english interpretation."""
+    try:
+        from modules.macro import build_dashboard
+        d = build_dashboard()
+        reg = d.get("regime") or {}
+        if not reg or not (d.get("ok") or {}).get("market"):
+            return _fail("macro", "no macro data (yfinance/FRED unavailable)")
+        tilt = float(reg.get("equity_tilt") or 0.0)
+        conf = float(reg.get("confidence") or 0.0)
+        direction = _sign(tilt)
+        conv = min(100.0, abs(tilt) * 70 + max(0.0, conf - 30))
+        caution = [r for r in (d.get("leading", []) + d.get("macro", []))
+                   if r.get("state") in ("COMPLACENT", "WATCH", "TURNED")]
+        factors = [[f"{reg.get('regime')} {reg.get('confidence')}%", direction or 1],
+                   [reg.get("driver") or "macro proxies", direction or 1]]
+        if caution:
+            factors.append([f"{len(caution)} caution indicators", -1])
+        return _vote("macro", direction, conv, factors=factors,
+                     regime_context=reg.get("regime"), detail={
+                         "regime": reg,
+                         "leading_summary": d.get("leading_summary"),
+                         "macro_summary": d.get("macro_summary"),
+                         "health": d.get("health"),
+                         "caution": [{"label": r["label"], "state": r["state"],
+                                      "meaning": r["meaning"]} for r in caution[:6]],
+                     })
+    except Exception as e:
+        return _fail("macro", e)
 
 
 def vote_rrg():
@@ -318,7 +355,7 @@ def vote_themes():
 # Orchestration
 # ---------------------------------------------------------------------------
 
-_ADAPTERS = [vote_breadth, vote_rrg, vote_rankings, vote_canslim,
+_ADAPTERS = [vote_breadth, vote_macro, vote_rrg, vote_rankings, vote_canslim,
              vote_flow, vote_news, vote_screener, vote_themes]
 
 

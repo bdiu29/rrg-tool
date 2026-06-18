@@ -33,15 +33,18 @@ MASTER_MODEL = os.environ.get("HARNESS_MASTER_MODEL", "opus")
 _CLI_TIMEOUT = int(os.environ.get("HARNESS_CLI_TIMEOUT", "150"))
 
 _SYSTEM = (
-    "You are the master analyst of a personal market-intelligence harness. Eight "
-    "data modules (breadth/regime, sector RRG, RS rankings, CANSLIM growth, options "
-    "flow, news/event-risk, screener, themes) each cast a signed vote. A DETERMINISTIC "
-    "combiner has already summed those votes into a composite score, a CONCENTRATE-vs-"
-    "ROTATE stance, and confluence long/avoid lists. Your job is to EXPLAIN that result "
-    "in plain, decisive prose — never to contradict the number or invent a different "
-    "call. Edge comes from CONFLUENCE across modules, not any single signal; call out "
-    "where modules agree and where they conflict. Be concise and concrete. No preamble, "
-    "no disclaimers beyond the event-risk note."
+    "You are the lead market strategist for a personal trading desk. You explain what is "
+    "happening in PLAIN ENGLISH — like a sharp portfolio manager talking to a smart friend, "
+    "not a quant writing a research note. Translate the technical signals (market breadth, "
+    "sector rotation, relative-strength rankings, options flow, and the growth/inflation "
+    "regime) into what they MEAN for positioning and sizing. A deterministic engine has "
+    "already decided the stance, the composite score, the growth/inflation regime "
+    "probabilities, and the confluence long/avoid lists — anchor everything to those "
+    "numbers and never invent a different call. Within that anchor you have room to "
+    "interpret: connect the dots across signals, surface a non-obvious insight or two, and "
+    "be specific (name the sectors and tickers). The edge is CONFLUENCE across signals, not "
+    "any single one. Be decisive and concrete, use everyday language, avoid jargon, and "
+    "skip boilerplate disclaimers (keep only the event-risk note if one is flagged)."
 )
 
 
@@ -117,16 +120,28 @@ def _template_rationale(vote):
 # Master synthesizer — one brief, anchored to the combiner result
 # ---------------------------------------------------------------------------
 
+def _macro_detail(votes):
+    """The macro vote's regime + caution indicators (for the brief payload)."""
+    for v in votes:
+        if v.get("domain") == "macro" and v.get("ok"):
+            return v.get("detail") or {}
+    return {}
+
+
 def master_brief(votes, combined, regime, rotation):
     """The unified daily brief (one Opus call), or a deterministic template when the
     LLM is unavailable. Anchored to `combined` — explains it, never overrides it."""
     if not available():
         return _template_brief(votes, combined), False
+    mac = _macro_detail(votes)
     payload = {
         "composite_score": combined["score"],
         "posture": combined["posture"],
         "stance": combined["stance"],
-        "regime": regime, "rotation": rotation,
+        "breadth_regime": regime, "rotation": rotation,
+        "macro_regime": mac.get("regime"),
+        "market_health": mac.get("health"),
+        "caution_indicators": mac.get("caution"),
         "factor_breakdown": combined["factors"],
         "confluence_longs": combined["longs"],
         "confluence_avoids": combined["avoids"],
@@ -134,16 +149,24 @@ def master_brief(votes, combined, regime, rotation):
                                      "horizon", "ok", "factors")} for v in votes],
     }
     prompt = (
-        "Here is today's harness state as JSON. The composite score, posture and "
-        "stance were computed deterministically — anchor your brief to them.\n\n"
+        "Here is today's market state as JSON. A deterministic engine already set the "
+        "composite score, the stance, and the growth/inflation regime probabilities — "
+        "anchor your brief to them and don't contradict them.\n\n"
         f"{json.dumps(payload, default=str)}\n\n"
-        "Write a concise market brief in GitHub-flavored markdown with these sections:\n"
-        "1. **Stance** — CONCENTRATE vs ROTATE and what it means for sizing this week.\n"
-        "2. **Why** — the 2-4 votes driving the composite; name agreements and conflicts.\n"
-        "3. **Confluence longs / avoids** — the sectors the longs/avoids lists name, with the WHY.\n"
-        "4. **Event risk** — only if the news vote flags an imminent print.\n"
-        "Keep it tight (under ~250 words). Remember: confluence across modules is the edge; "
-        "no single signal has standalone alpha in a concentration regime."
+        "Write a plain-English market brief in GitHub-flavored markdown that a smart "
+        "non-quant could follow. Structure it like this:\n"
+        "- Start with a short, decisive HEADLINE as a markdown heading (e.g. "
+        "`### Today is a hold-and-stay-selective day`).\n"
+        "- Then 3-5 SHORT paragraphs (no section labels): what's actually happening today "
+        "and what it means; what the CONCENTRATE-vs-ROTATE stance says about sizing this "
+        "week; the growth/inflation regime in everyday terms (what backdrop we're in and "
+        "what plays in it); and the specific confluence longs/avoids — name the sectors and "
+        "any tickers, with a one-line WHY each.\n"
+        "- Surface ONE or TWO non-obvious expert insights (a rotation quietly starting, a "
+        "complacency tell, a divergence) — interpret, don't just list.\n"
+        "- Add an event-risk line ONLY if the news vote flags an imminent print.\n"
+        "Keep it tight (~250-320 words), confident, and jargon-free. The edge is confluence "
+        "across signals, not any single one."
     )
     text = claude_cli(prompt, MASTER_MODEL)
     if text:
@@ -158,6 +181,11 @@ def _template_brief(votes, combined):
     L.append(f"**Stance: {combined['stance']}** · composite **{combined['score']:+.0f}** "
              f"({combined['posture']}) · regime {combined.get('regime') or '—'} · "
              f"rotation {combined.get('rotation') or '—'}")
+    mac = _macro_detail(votes).get("regime") or {}
+    if mac:
+        L.append("")
+        L.append(f"**Macro backdrop:** {mac.get('regime')} ({mac.get('confidence')}% confidence, "
+                 f"shift risk {mac.get('shift_risk')}) — {mac.get('playbook')}")
     L.append("")
     if combined["factors"]:
         drivers = ", ".join(f"{d} ({a:+.0f})" for d, a in combined["factors"][:5])

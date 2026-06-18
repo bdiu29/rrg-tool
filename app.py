@@ -22,6 +22,7 @@ from modules.themes import register_routes as register_themes
 from modules.flow import register_routes as register_flow
 from modules.canslim import register_routes as register_canslim
 from modules.news import register_routes as register_news
+from modules.macro import register_routes as register_macro
 from modules.harness import register_routes as register_harness
 
 
@@ -82,6 +83,7 @@ register_themes(router)
 register_flow(router)
 register_canslim(router)
 register_news(router)
+register_macro(router)
 register_harness(router)
 
 

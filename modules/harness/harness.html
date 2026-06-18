@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Harness — Market Intelligence Harness</title>
+<title>Market Intelligence — Harness</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Spline+Sans+Mono:wght@400;500;600&display=swap');
 
@@ -34,6 +34,9 @@
   .panel-title { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800;
                  font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em;
                  color: var(--accent); margin-bottom: 12px; }
+  .panel-title .lite { font-weight: 400; color: var(--dim); text-transform: none; letter-spacing: 0; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 820px) { .cols { grid-template-columns: 1fr; } }
 
   /* stance banner */
   .stance-wrap { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; }
@@ -48,6 +51,11 @@
                 letter-spacing: 0.08em; text-transform: uppercase; margin-top: 4px; }
   .meta { font-size: 11.5px; color: var(--dim); line-height: 1.8; }
   .meta b { color: var(--ink); }
+  .regime-pill { display: inline-block; font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800;
+                 font-size: 16px; padding: 4px 12px; border-radius: 9px; }
+  .regime-pill.good { background: rgba(26,157,107,0.16); color: #15724e; }
+  .regime-pill.def  { background: rgba(209,69,59,0.15); color: #a3322a; }
+  .regime-pill.mix  { background: rgba(181,121,31,0.16); color: #8a5c16; }
 
   button { font-family: inherit; font-size: 11px; font-weight: 600; padding: 7px 14px;
            border: none; border-radius: 8px; background: var(--accent); color: #fff;
@@ -56,14 +64,67 @@
 
   /* brief markdown */
   .brief { font-size: 13px; line-height: 1.66; }
-  .brief h3 { font-family: 'Bricolage Grotesque', sans-serif; font-size: 13px; text-transform: uppercase;
-              letter-spacing: 0.05em; color: var(--accent); margin: 14px 0 5px; }
-  .brief p { margin: 7px 0; } .brief ul { margin: 6px 0 6px 20px; } .brief li { margin: 3px 0; }
+  .brief h3 { font-family: 'Bricolage Grotesque', sans-serif; font-size: 15px;
+              letter-spacing: -0.01em; color: var(--ink); margin: 4px 0 8px; }
+  .brief p { margin: 9px 0; } .brief ul { margin: 6px 0 6px 20px; } .brief li { margin: 3px 0; }
   .brief b, .brief strong { color: var(--ink); font-weight: 600; }
   .brief em { color: var(--dim); font-style: italic; }
 
   .event { background: rgba(181,121,31,0.13); border: 1px solid rgba(181,121,31,0.4);
            color: #8a5c16; border-radius: 10px; padding: 9px 14px; font-size: 12px; margin-bottom: 18px; }
+
+  /* What You Need to Know cards */
+  .wyntk { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 820px) { .wyntk { grid-template-columns: 1fr; } }
+  .wcard { border: 1px solid var(--grid); border-radius: 12px; padding: 14px 16px; background: #fff; }
+  .wcard .t { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 16px; color: var(--ink); }
+  .wcard .hl { font-weight: 600; font-size: 12.5px; color: var(--accent); margin: 6px 0 7px; }
+  .wcard .bd { font-size: 12px; color: var(--dim); line-height: 1.55; }
+
+  /* regime panel */
+  .regime-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+  .regime-name { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 28px; color: var(--green); }
+  .regime-name.def { color: var(--red); } .regime-name.mix { color: var(--amber); }
+  .regime-axes { font-size: 12px; color: var(--dim); }
+  .kv { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--grid); font-size: 12.5px; }
+  .kv:last-child { border-bottom: none; } .kv .k { color: var(--dim); } .kv .v { font-weight: 600; }
+  .v.good { color: var(--green); } .v.bad { color: var(--red); } .v.warn { color: var(--amber); }
+  .prob { display: flex; align-items: center; gap: 10px; margin: 7px 0; font-size: 12.5px; }
+  .prob .lbl { width: 96px; } .prob .track { flex: 1; height: 9px; background: var(--panel2); border-radius: 5px; overflow: hidden; }
+  .prob .fill { height: 100%; background: var(--blue); border-radius: 5px; }
+  .prob.top .fill { background: var(--green); } .prob .pct { width: 38px; text-align: right; font-weight: 600; }
+  .driver { font-size: 11.5px; color: var(--dim); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--grid); }
+  .playbook { font-size: 12.5px; line-height: 1.6; margin-top: 8px; }
+
+  /* indicator tables */
+  table.ind { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.ind th { text-align: left; font-weight: 600; color: var(--dim); font-size: 9.5px; text-transform: uppercase;
+    letter-spacing: 0.05em; padding: 6px 8px; border-bottom: 1px solid var(--grid); }
+  table.ind th.r, table.ind td.r { text-align: right; }
+  table.ind td { padding: 8px 8px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  table.ind tr:last-child td { border-bottom: none; }
+  .state { font-weight: 700; font-size: 10px; letter-spacing: 0.04em; }
+  .state.STABLE { color: var(--green); } .state.COMPLACENT { color: var(--amber); }
+  .state.WATCH { color: var(--amber); } .state.TURNED { color: var(--red); }
+  .ind-label { font-weight: 600; } .ind-mean { color: var(--dim); font-size: 11px; line-height: 1.45; margin-top: 2px; }
+  .val { font-weight: 700; } .delta.pos { color: var(--green); } .delta.neg { color: var(--red); }
+  .summary { font-size: 11.5px; color: var(--ink); margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--grid); }
+
+  /* themes this week */
+  .thm { font-size: 12.5px; }
+  .thm .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px;
+              padding: 9px 0; border-bottom: 1px solid var(--grid); }
+  .thm .row:last-child { border-bottom: none; }
+  .thm .nm { font-weight: 600; } .thm .tk { font-size: 10.5px; color: var(--amber); margin-top: 2px; }
+  .thm .pc { font-weight: 700; white-space: nowrap; } .thm .pc.pos { color: var(--green); } .thm .pc.neg { color: var(--red); }
+  .thm .col-h { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 12px; margin-bottom: 4px; }
+
+  /* engine-room divider */
+  .room { margin: 28px 0 6px; display: flex; align-items: center; gap: 12px; }
+  .room .lbl { font-family: 'Bricolage Grotesque', sans-serif; font-weight: 800; font-size: 12px;
+               text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); }
+  .room .line { flex: 1; height: 1px; background: var(--grid); }
+  .room-note { font-size: 11px; color: var(--dim); margin-bottom: 14px; }
 
   /* confluence chips */
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -116,13 +177,13 @@
   <div>
     <nav>
       <a href="/" class="nav-link">← Home</a>
+      <a href="/macro.html" class="nav-link" style="margin-left:14px">Macro →</a>
       <a href="/rrg.html" class="nav-link" style="margin-left:14px">RRG →</a>
       <a href="/breadth.html" class="nav-link" style="margin-left:14px">Breadth →</a>
-      <a href="/canslim.html" class="nav-link" style="margin-left:14px">CANSLIM →</a>
       <a href="/news.html" class="nav-link" style="margin-left:14px">News →</a>
-      <a href="/flow.html" class="nav-link" style="margin-left:14px">Flow →</a>
+      <a href="/themes.html" class="nav-link" style="margin-left:14px">Themes →</a>
     </nav>
-    <h1>Harness<span class="sub">AI subagents per domain → one confluence brief · math decides, Claude explains</span></h1>
+    <h1>Market Intelligence<span class="sub">today's brief · regime · signals of health — math decides, Claude explains</span></h1>
   </div>
   <div class="status-line" id="status">loading…</div>
 </header>
@@ -139,9 +200,43 @@
 <div id="eventRisk"></div>
 
 <div class="panel">
-  <div class="panel-title">The Brief</div>
+  <div class="panel-title">Today's Market Briefing</div>
   <div class="brief" id="brief"><span class="empty">loading…</span></div>
 </div>
+
+<div class="panel">
+  <div class="panel-title">What You Need to Know</div>
+  <div class="wyntk" id="wyntk"><span class="empty">loading…</span></div>
+</div>
+
+<div class="cols">
+  <div class="panel">
+    <div class="panel-title">Market Regime</div>
+    <div id="regime"><span class="empty">loading…</span></div>
+  </div>
+  <div class="panel">
+    <div class="panel-title">Market Health</div>
+    <div id="health"><span class="empty">loading…</span></div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Leading Indicators <span class="lite">— market internals</span></div>
+  <div id="leading"><span class="empty">loading…</span></div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Macro Indicators</div>
+  <div id="macro"><span class="empty">loading…</span></div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Themes This Week</div>
+  <div class="cols" id="themes"><span class="empty">loading…</span></div>
+</div>
+
+<div class="room"><span class="lbl">Engine Room</span><span class="line"></span></div>
+<div class="room-note">The deterministic layer under the brief — the cross-domain confluence, every module's signed vote, and the referee that A/B's the combined decision against beta.</div>
 
 <div class="panel">
   <div class="panel-title">Confluence — Longs / Avoids</div>
@@ -168,11 +263,13 @@
   <div class="note" id="caveats"></div>
 </div>
 
-<footer>Market Intelligence Harness · the harness synthesizes eight domain votes; the decision is a deterministic, backtestable combiner.</footer>
+<footer>Market Intelligence Harness · nine domain votes + a deterministic, regime-arbitrated combiner · Claude narrates · not investment advice.</footer>
 
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => (s == null ? "" : String(s)).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const sign = v => v == null ? "" : (v > 0 ? "+" : "");
+const fmt = (v, u) => v == null ? "—" : ((Math.abs(v) >= 1000 ? Math.round(v).toLocaleString() : v) + (u || ""));
 
 // minimal markdown → html (headers, bold, italics, lists, paragraphs)
 function md(t) {
@@ -194,6 +291,7 @@ function md(t) {
 const arrowCls = d => d > 0 ? "pos" : d < 0 ? "neg" : "zero";
 const arrowCh  = d => d > 0 ? "▲" : d < 0 ? "▼" : "·";
 
+// ---- the harness brief / combiner / votes (the /api/harness payload) ----
 function render(p) {
   const c = p.combined;
   const st = (c.stance || "NEUTRAL").toLowerCase();
@@ -201,14 +299,13 @@ function render(p) {
   const sc = $("score");
   sc.className = "score " + (c.score > 0 ? "pos" : c.score < 0 ? "neg" : "zero");
   sc.innerHTML = (c.score > 0 ? "+" : "") + Math.round(c.score) + '<span class="lbl">composite · ' + esc(c.posture) + '</span>';
-  $("meta").innerHTML = `regime <b>${esc(c.regime || "—")}</b> · rotation <b>${esc(c.rotation || "—")}</b><br>`
+  $("meta").innerHTML = `breadth <b>${esc(c.regime || "—")}</b> · rotation <b>${esc(c.rotation || "—")}</b><br>`
     + `${c.n_votes} of ${p.votes.length} modules voting · drivers: `
     + (c.factors.slice(0,4).map(f => `${esc(f[0])} ${f[1] > 0 ? "+" : ""}${Math.round(f[1])}`).join(", ") || "—");
 
   $("status").innerHTML = `${esc(p.date)} · ${esc(p.generated_at || "")}<br>`
     + (p.llm_used ? "Claude narration (subscription)" : (p.llm_available ? "template brief" : "LLM unavailable — template brief"));
 
-  // event risk strip
   const news = p.votes.find(v => v.domain === "news" && v.ok);
   $("eventRisk").innerHTML = (news && news.detail && news.detail.flag)
     ? `<div class="event">⚠️ ${esc(news.detail.note)}</div>` : "";
@@ -244,9 +341,7 @@ function render(p) {
 
 async function load(force) {
   try {
-    const r = force
-      ? await fetch("/api/harness/run", { method: "POST" })
-      : await fetch("/api/harness");
+    const r = force ? await fetch("/api/harness/run", { method: "POST" }) : await fetch("/api/harness");
     render(await r.json());
   } catch (e) {
     $("brief").innerHTML = '<span class="empty">failed to load: ' + esc(e) + '</span>';
@@ -255,8 +350,114 @@ async function load(force) {
   }
 }
 
+// ---- the macro dashboard (the /api/macro payload): cards + regime + health + tables ----
+const regimeCls = tilt => tilt >= 0.2 ? "good" : (tilt <= -0.2 ? "def" : "mix");
+
+function renderCards(cards) {
+  if (!cards || !cards.length) { $("wyntk").innerHTML = '<span class="empty">—</span>'; return; }
+  $("wyntk").innerHTML = cards.map(c =>
+    `<div class="wcard"><div class="t">${esc(c.title)}</div>
+      <div class="hl">${esc(c.headline)}</div><div class="bd">${esc(c.body)}</div></div>`).join("");
+}
+
+function renderRegime(r) {
+  const cls = regimeCls(r.equity_tilt);
+  let h = `<div class="regime-head"><div class="regime-name ${cls}">${esc(r.regime)}</div>
+    <div class="regime-axes">${esc(r.axes)}</div></div>`;
+  (r.probabilities || []).forEach((p, i) => {
+    h += `<div class="prob ${i===0?"top":""}"><span class="lbl">${esc(p.name)}</span>
+      <span class="track"><span class="fill" style="width:${p.prob}%"></span></span>
+      <span class="pct">${p.prob}%</span></div>`;
+  });
+  const sr = r.shift_risk, srcls = sr === "High" ? "bad" : (sr === "Moderate" ? "warn" : "good");
+  h += `<div class="kv"><span class="k">Confidence</span><span class="v ${r.confidence>=45?"good":"warn"}">${r.confidence}%</span></div>`;
+  h += `<div class="kv"><span class="k">Shift risk</span><span class="v ${srcls}">${esc(sr)}</span></div>`;
+  h += `<div class="kv"><span class="k">Growth / Inflation</span><span class="v">${esc(r.growth_dir)} · ${esc(r.inflation_dir)}</span></div>`;
+  h += `<div class="driver"><b>Driver:</b> ${esc(r.driver)}</div>`;
+  h += `<div class="playbook">${esc(r.playbook)}</div>`;
+  $("regime").innerHTML = h;
+}
+
+function healthRow(k, v, u, signed) {
+  if (v == null) return "";
+  const cls = signed == null ? "" : (v >= 0 ? "good" : "bad");
+  return `<div class="kv"><span class="k">${esc(k)}</span><span class="v ${cls}">${sign(v)}${fmt(v,u)}</span></div>`;
+}
+function renderHealth(hh) {
+  let h = "";
+  h += healthRow("Stocks above 50-day avg", hh.pct_above_50, "%", null);
+  h += healthRow("Stocks above 200-day avg", hh.pct_above_200, "%", null);
+  h += healthRow("S&P 500 vs 50-day avg", hh.spy_vs_50, "%", true);
+  h += healthRow("S&P 500 vs 200-day avg", hh.spy_vs_200, "%", true);
+  h += healthRow("S&P 500 vs 62-week EMA", hh.spy_vs_62w_ema, "%", true);
+  h += healthRow("S&P 500 YTD", hh.spy_ytd, "%", true);
+  $("health").innerHTML = h || '<span class="empty">run a breadth backfill for health stats</span>';
+}
+
+function indTable(rows, summary) {
+  if (!rows || !rows.length) return '<span class="empty">no data — check FRED key / run a breadth backfill</span>';
+  let h = `<table class="ind"><tr><th>State</th><th>Indicator</th><th class="r">Value</th><th class="r">20d</th></tr>`;
+  rows.forEach(r => {
+    const dcls = r.delta == null ? "" : (r.delta >= 0 ? "pos" : "neg");
+    h += `<tr>
+      <td><span class="state ${esc(r.state)}">${esc(r.state)}</span></td>
+      <td><div class="ind-label">${esc(r.label)}</div><div class="ind-mean">${esc(r.meaning)}</div></td>
+      <td class="r"><span class="val">${sign(r.value)}${fmt(r.value, r.unit)}</span></td>
+      <td class="r delta ${dcls}">${r.delta == null ? "—" : sign(r.delta) + fmt(r.delta, r.delta_unit)}</td>
+    </tr>`;
+  });
+  h += `</table><div class="summary">${esc(summary)}</div>`;
+  return h;
+}
+
+async function loadMacro() {
+  try {
+    const d = await (await fetch("/api/macro")).json();
+    if (d.error) throw new Error(d.error);
+    renderCards(d.cards);
+    renderRegime(d.regime);
+    renderHealth(d.health || {});
+    $("leading").innerHTML = indTable(d.leading, d.leading_summary);
+    $("macro").innerHTML   = indTable(d.macro, d.macro_summary);
+  } catch (e) {
+    const msg = '<span class="empty">macro unavailable: ' + esc(e.message || e) + '</span>';
+    ["wyntk","regime","health","leading","macro"].forEach(id => $(id).innerHTML = msg);
+  }
+}
+
+// ---- themes this week (the /api/themes payload) ----
+function themeCol(title, rows, symMap) {
+  let h = `<div class="thm"><div class="col-h">${title}</div>`;
+  if (!rows.length) { h += '<span class="empty">—</span></div>'; return h; }
+  rows.forEach(s => {
+    const tks = (symMap[s.name] || []).slice(0,3).join(" · ");
+    const pc = s.rs_wk, cls = pc >= 0 ? "pos" : "neg";
+    h += `<div class="row"><div><div class="nm">${esc(s.name)}</div>${tks ? `<div class="tk">${esc(tks)}</div>`:""}</div>
+      <div class="pc ${cls}">${sign(pc)}${pc==null?"—":pc.toFixed(1)}%</div></div>`;
+  });
+  return h + "</div>";
+}
+
+async function loadThemes() {
+  try {
+    const d = await (await fetch("/api/themes?timeframe=daily")).json();
+    const secs = ((d.ranking || {}).sectors || []).filter(s => s.rs_wk != null);
+    if (!secs.length) throw new Error("no theme data");
+    const symMap = {};
+    (d.themes || []).forEach(t => { if (t.name && t.symbols) symMap[t.name] = t.symbols; });
+    const top = [...secs].sort((a,b) => b.rs_wk - a.rs_wk).slice(0,5);
+    const bot = [...secs].sort((a,b) => a.rs_wk - b.rs_wk).slice(0,5);
+    $("themes").innerHTML = themeCol("Top 5 — Relative Strength vs SPY (1W)", top, symMap)
+                          + themeCol("Bottom 5", bot, symMap);
+  } catch (e) {
+    $("themes").innerHTML = '<span class="empty">themes unavailable: ' + esc(e.message || e) + '</span>';
+  }
+}
+
 $("regen").onclick = () => { $("regen").disabled = true; $("regen").textContent = "synthesizing…"; load(true); };
-load(false);
+
+// all three panels load independently + fail soft — the page never blocks on one API
+load(false); loadMacro(); loadThemes();
 
 // --- Referee (Phase 2) ---
 const num = (v, suf = "") => v == null ? "—" : `<span class="${v >= 0 ? "pos" : "neg"}">${v >= 0 ? "+" : ""}${v}${suf}</span>`;
