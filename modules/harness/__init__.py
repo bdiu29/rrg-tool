@@ -167,6 +167,53 @@ def _handle_run(req):
         return Response.error(str(e))
 
 
+def _handle_watchlist(req):
+    """GET → the stored focus watchlist; POST {text, replace} → import a TradingView
+    CSV/watchlist export (parse + persist)."""
+    from modules.harness import store, watchlist
+    if req.method == "POST":
+        try:
+            body = req.json_body() or {}
+        except Exception:
+            body = {}
+        text = body.get("text") or ""
+        if not text.strip():
+            return Response.error("no watchlist text uploaded", 400)
+        res = watchlist.import_text(text, source="upload",
+                                    replace=bool(body.get("replace", True)))
+        return Response.json(res)
+    return Response.json({"symbols": store.get_watchlist()})
+
+
+def _handle_picks(req):
+    """The ranked impulse×hold suggestions for the stored watchlist (on-demand)."""
+    try:
+        from modules.harness import picks
+        return Response.json(picks.suggest())
+    except Exception as e:
+        return Response.error(f"picks failed: {e}", 500)
+
+
+def _handle_paper(req):
+    """GET → both paper books' state + the gate. POST /step → advance one trading day
+    (idempotent). POST /reset → wipe the books (requires {confirm:true})."""
+    from modules.harness import paper
+    path = req.path.rstrip("/")
+    try:
+        if path.endswith("/step"):
+            return Response.json(paper.step())
+        if path.endswith("/reset"):
+            body = req.json_body() if req.method == "POST" else {}
+            if not (body or {}).get("confirm"):
+                return Response.error("reset requires {\"confirm\": true}", 400)
+            from modules.harness import store
+            store.reset_paper()
+            return Response.json({"reset": True})
+        return Response.json(paper.state())
+    except Exception as e:
+        return Response.error(f"paper failed: {e}", 500)
+
+
 def _handle_backtest(req):
     """The referee (Phase 2) — A/B the harness confluence decision vs raw RRG vs beta
     over history. Synchronous (sector daily ~4s); the LLM plays no part."""
@@ -188,8 +235,19 @@ def _handle_backtest(req):
 
 
 def register_routes(router):
-    router.get("/harness.html",         _handle_page)
-    router.get("/api/harness",          _handle_api)
-    router.get("/api/harness/summary",  _handle_summary)
-    router.post("/api/harness/run",     _handle_run)
+    try:
+        from modules.harness import store
+        store.init_db()
+    except Exception:
+        pass
+    router.get("/harness.html",          _handle_page)
+    router.get("/api/harness",           _handle_api)
+    router.get("/api/harness/summary",   _handle_summary)
+    router.post("/api/harness/run",      _handle_run)
     router.post("/api/harness/backtest", _handle_backtest)
+    router.get("/api/harness/watchlist",  _handle_watchlist)
+    router.post("/api/harness/watchlist", _handle_watchlist)
+    router.get("/api/harness/picks",      _handle_picks)
+    router.get("/api/harness/paper",        _handle_paper)
+    router.post("/api/harness/paper/step",  _handle_paper)
+    router.post("/api/harness/paper/reset", _handle_paper)
