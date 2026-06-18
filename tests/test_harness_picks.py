@@ -95,6 +95,19 @@ class TestScoreSymbol(unittest.TestCase):
         weak = picks.score_symbol(_strong_quality_row(), {"regime_factor": 0.75})
         self.assertLess(weak["pick"], full["pick"])
 
+    def test_nan_string_fields_dont_crash(self):
+        # stale/unresolved names come out of compute_snapshot with NaN (float) in the
+        # string columns; NaN is truthy so `(x or "").lower()` used to blow up.
+        nan = float("nan")
+        row = {"symbol": "STALE", "close": nan, "atr14": nan,
+               "flag": nan, "ad_rating": nan, "exhaustion": nan, "sector": nan}
+        s = picks.score_symbol(row, {"regime_factor": 1.0})
+        self.assertEqual(s["impulse"], 0.0)
+        self.assertFalse(s["tradeable"])
+        # output must be JSON-safe (no NaN floats in the string fields)
+        for k in ("flag", "ad_rating", "sector"):
+            self.assertIsNone(s[k])
+
 
 # ---------------------------------------------------------------------------
 # suggest — ranking (data fetch injected)

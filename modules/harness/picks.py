@@ -56,6 +56,12 @@ def _f(x):
     return None if math.isnan(v) or math.isinf(v) else v
 
 
+def _str(x):
+    """→ the string, or '' for NaN / float / None. (NaN is truthy, so the `x or ""`
+    idiom is unsafe for snapshot string columns that come back NaN on stale names.)"""
+    return x if isinstance(x, str) else ""
+
+
 def _clamp(v, lo=0.0, hi=100.0):
     return max(lo, min(hi, v))
 
@@ -74,7 +80,7 @@ def _impulse(row):
             s += amt
             why.append((amt, label))
 
-    flag = (row.get("flag") or "").lower()
+    flag = _str(row.get("flag")).lower()
     if flag == "bull":   add(_W["flag_bull"], "bull flag")
     elif flag == "bear": add(_W["flag_bear"], "bear flag")
 
@@ -93,7 +99,7 @@ def _impulse(row):
         elif rvol >= 1.5 and chg is not None and abs(chg) < 3:
             add(_W["vol_building"], "volume building")
 
-    ad = (row.get("ad_rating") or "").upper()
+    ad = _str(row.get("ad_rating")).upper()
     if ad == "A":            add(_W["ad_A"], "strong accumulation")
     elif ad == "B":          add(_W["ad_B"], "accumulation")
     elif ad in ("D", "E"):   add(_W["ad_DE"], "distribution")
@@ -106,7 +112,7 @@ def _impulse(row):
     if c and e20 and e50 and c > e20 > e50:
         add(_W["momentum"], "momentum (>20/50 EMA)")
 
-    if (row.get("exhaustion") or "").lower() == "buyer":
+    if _str(row.get("exhaustion")).lower() == "buyer":
         add(_W["buying_climax"], "buying climax (late)")
 
     why.sort(key=lambda f: abs(f[0]), reverse=True)
@@ -213,10 +219,10 @@ def score_symbol(row, ctx=None):
         "target":   target,
         "risk_pct": risk_pct,
         "canslim":  None if canslim is None else round(canslim),
-        "flag":     row.get("flag"),
-        "ad_rating": row.get("ad_rating"),
+        "flag":     _str(row.get("flag")) or None,
+        "ad_rating": _str(row.get("ad_rating")) or None,
         "rs_1m_pct": _f(row.get("rs_1m_pct")),
-        "sector":   row.get("sector"),
+        "sector":   _str(row.get("sector")) or None,
         "source":   row.get("_source", "snapshot"),
         "why":      why,
     }
@@ -294,11 +300,13 @@ def _rows(symbols):
     if snap is None or snap.empty:
         return {}
     snap = snap.set_index("symbol")
-    funda = _fundamentals(syms)
+    # keep only names that actually resolved with a price (skips indices/crypto/foreign
+    # tickers yfinance can't price — and so avoids a slow .info call on each of them).
+    present = [s for s in syms
+               if s in snap.index and _f(snap.loc[s].get("close")) is not None]
+    funda = _fundamentals(present)
     rows = {}
-    for s in syms:
-        if s not in snap.index:
-            continue
+    for s in present:
         r = {k: snap.loc[s][k] for k in snap.columns}
         f = funda.get(s, {})
         r.update(f)
