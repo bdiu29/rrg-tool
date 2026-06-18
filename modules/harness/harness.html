@@ -322,6 +322,7 @@
     <button id="paperStep">▶ Step today</button>
     <button id="paperRefresh">Refresh</button>
   </div>
+  <div id="stepStatus" class="note" style="margin-top:8px"></div>
   <div id="paperResult" style="margin-top:14px"><span class="empty">loading…</span></div>
 </div>
 
@@ -693,18 +694,36 @@ loadPaper();
 $("paperRefresh").onclick = loadPaper;
 $("paperStep").onclick = async () => {
   $("paperStep").disabled = true; $("paperStep").textContent = "stepping…";
+  $("stepStatus").textContent = "Stepping… gathering the decision + pricing positions (can take a moment).";
   try {
     const r = await fetch("/api/harness/paper/step", { method: "POST",
       headers: { "Content-Type": "application/json" }, body: "{}" });
-    await r.json();
+    const d = await r.json();
     await loadPaper();
-  } catch (e) { /* surfaced on reload */ }
-  finally { $("paperStep").disabled = false; $("paperStep").textContent = "▶ Step today"; }
+    if (d.error) {
+      $("stepStatus").innerHTML = '<span style="color:var(--red)">Step failed: ' + esc(d.error) + '</span>';
+    } else if (d.skipped) {
+      $("stepStatus").textContent = "Already stepped today (" + (d.date || "") + ") — the book rebalances once per trading day"
+        + (window.__paperMode === "autonomous"
+            ? "; the autonomous daemon already stepped it at the close."
+            : ". (Idempotent — come back next session, or use AI-assist chat meanwhile.)");
+    } else {
+      const books = (d.books || []).map(b =>
+        `${b.book}: ${b.n_long} long, ${b.fills} fills, $${(b.cost || 0).toFixed(0)} cost`).join(" · ");
+      $("stepStatus").textContent = `Stepped ${d.date} · stance ${d.stance} / ${d.posture}`
+        + (books ? ` · ${books}` : " · no tradeable picks → flat (upload a watchlist + Get Suggestions)");
+    }
+  } catch (e) {
+    $("stepStatus").innerHTML = '<span style="color:var(--red)">Step failed: ' + esc(e) + '</span>';
+  } finally {
+    $("paperStep").disabled = false; $("paperStep").textContent = "▶ Step today";
+  }
 };
 
 // --- Trading Mode (Phase 4) ---
 function applyMode(d) {
   const mode = (d && d.mode) || "manual";
+  window.__paperMode = mode;
   document.querySelectorAll('input[name=tmode]').forEach(r => { r.checked = (r.value === mode); });
   const last = d && d.daemon && d.daemon.last_auto_step;
   $("modeStatus").textContent = mode === "autonomous"

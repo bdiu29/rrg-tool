@@ -201,7 +201,7 @@ def _handle_paper(req):
     path = req.path.rstrip("/")
     try:
         if path.endswith("/step"):
-            return Response.json(paper.step())
+            return Response.json(paper.step(force=True))    # explicit user action → re-run today
         if path.endswith("/reset"):
             body = req.json_body() if req.method == "POST" else {}
             if not (body or {}).get("confirm"):

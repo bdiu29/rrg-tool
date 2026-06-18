@@ -153,6 +153,18 @@ def _step_book(book, date, decision, suggestions, prices):
 # ---------------------------------------------------------------------------
 
 def _live_decision():
+    """The combiner's combined decision. Reuse today's cached brief decision when present
+    (fast, consistent with the page, and NEVER triggers the LLM) — else a fresh
+    deterministic compute via gather_all+combine (no LLM, just network-bound)."""
+    from datetime import date
+    try:
+        from modules.harness import _MEM, _load_file
+        today = date.today().isoformat()
+        cached = (_MEM.get("payload") if _MEM.get("date") == today else None) or _load_file(today)
+        if cached and cached.get("combined"):
+            return cached["combined"]
+    except Exception:
+        pass
     from modules.harness import votes as votes_mod, combiner
     votes, regime, rotation = votes_mod.gather_all()
     return combiner.combine(votes, regime, rotation)
@@ -171,12 +183,14 @@ def _fetch_prices(symbols):
     return out
 
 
-def step(asof=None, prices=None, decision=None, suggestions=None):
-    """Advance ONE trading day for both books — idempotent (a second call for the same
-    date is a no-op). Live inputs are computed if not injected."""
+def step(asof=None, prices=None, decision=None, suggestions=None, force=False):
+    """Advance ONE trading day for both books. Idempotent by default (a second call for
+    the same date is a no-op) — the autonomous daemon relies on that. `force=True` (a
+    user's explicit 'Step today') re-runs today, overwriting the day's step + re-marking;
+    safe because re-stepping with unchanged data nets ~no trades (the dust filter)."""
     store.init_db()
     date = asof or _date.today().isoformat()
-    pending = [b for b in BOOKS if not store.step_exists(date, b)]
+    pending = [b for b in BOOKS if force or not store.step_exists(date, b)]
     if not pending:
         return {"date": date, "skipped": True, "reason": "already stepped today",
                 "books": []}

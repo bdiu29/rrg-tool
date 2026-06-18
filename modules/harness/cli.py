@@ -79,7 +79,7 @@ def main(argv=None):
 
     if "--paper-step" in argv:
         from modules.harness import paper
-        res = paper.step()
+        res = paper.step(force=True)               # explicit user action → re-run today
         if res.get("skipped"):
             print(f"  paper: {res['date']} already stepped — {res['reason']}")
         else:
