@@ -26,3 +26,5 @@ modules/flow/data/
 modules/news/data/
 # Harness module local data store (cached daily briefs)
 modules/harness/data/
+# Research module local data store (cached primers)
+modules/research/data/

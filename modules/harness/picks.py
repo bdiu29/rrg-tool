@@ -9,8 +9,13 @@ the move fails (the explicit ask — setups on quality names, not momentum lotto
     (bull flag, golden pocket, breakout vs 20d/52w highs, RVOL / volume-building,
     accumulation A/D rating, RS leadership, momentum) minus a buying-climax penalty.
   • HOLD-ABILITY (0-100) — the CANSLIM growth/quality score when fundamentals exist
-    (else an RS+trend proxy), times a quality FLOOR (penny price / illiquidity /
-    broken-downtrend penalties) — i.e. "would I be OK holding this if it dips?".
+    (else an RS+trend proxy), BLENDED with the research module's per-ticker
+    fundamental-conviction score (valuation + trend + self-contained growth/demand/
+    sponsorship/RS; weight FUND_BLEND), times a quality FLOOR (penny price /
+    illiquidity / broken-downtrend penalties) — i.e. "would I be OK holding this if
+    it dips?". The fundamental read is the deep-dive's number folded in here so
+    conviction on a name flows straight into its size; fail-soft (unchanged when the
+    research module is unavailable).
   • PICK = geomean(impulse, hold) × the market-regime factor, with an event/earnings
     damper. A great setup on a junk stock scores LOW (geomean punishes a weak axis);
     a great stock with no setup isn't a buy-now. `tradeable` requires BOTH axes pass.
@@ -33,6 +38,7 @@ _SUGGEST_CACHE = {"key": None, "at": 0.0, "result": None}
 # Gates / sizing — judgment-set like the rest of the project's confluence weights.
 MIN_HOLD     = 45.0     # below this a name isn't "solid to hold" → not tradeable
 MIN_IMPULSE  = 40.0     # below this there's no actionable setup → not a buy-now
+FUND_BLEND   = 0.45     # weight of the research module's fundamental score in HOLD (when present)
 ATR_STOP_K   = 2.0      # stop = close − K·ATR14 (target = 2× that distance up; 2:1)
 PRICE_FLOOR  = 5.0      # sub-$5 = not a "solid hold"
 DOLLAR_VOL_FLOOR = 3e6  # < $3M/day average = too illiquid to hold confidently
@@ -156,6 +162,14 @@ def _hold(row):
         quality = _clamp(quality)
         why.append(f"quality≈{quality:.0f} (no fundamentals)")
 
+    # fold in the research module's fundamental-conviction score (the per-ticker
+    # deep-dive's number, attached upstream in suggest()) — it adds valuation/
+    # trend/self-contained growth the CANSLIM/proxy read alone doesn't capture.
+    fund = _f(row.get("_fund_score"))
+    if fund is not None:
+        quality = FUND_BLEND * fund + (1.0 - FUND_BLEND) * quality
+        why.append(f"fundamentals {fund:.0f}")
+
     # quality FLOOR — the "solid to hold" hard checks (multiplicative)
     floor = 1.0
     close = _f(row.get("close"))
@@ -223,6 +237,8 @@ def score_symbol(row, ctx=None):
         "target":   target,
         "risk_pct": risk_pct,
         "canslim":  None if canslim is None else round(canslim),
+        "fund_score":   _f(row.get("_fund_score")),
+        "fund_verdict": _str(row.get("_fund_verdict")) or None,
         "flag":     _str(row.get("flag")) or None,
         "ad_rating": _str(row.get("ad_rating")) or None,
         "rs_1m_pct": _f(row.get("rs_1m_pct")),
@@ -369,6 +385,23 @@ def _attach_cross_sectional(rows):
         r["_float_pctl"] = so_map(so_vals[s]) if so_vals[s] is not None else None
 
 
+def _attach_fundamentals(rows):
+    """Attach the research module's per-ticker fundamental-conviction score to each
+    row (read by _hold's HOLD blend + surfaced in the suggestion). Pure scorer, fail-
+    soft: if research is unavailable the rows are unchanged and HOLD is the old math."""
+    try:
+        from modules.research import fundamental_score
+    except Exception:
+        return
+    for r in rows.values():
+        try:
+            fs = fundamental_score(r)
+        except Exception:
+            fs = None
+        r["_fund_score"] = (fs or {}).get("score")
+        r["_fund_verdict"] = (fs or {}).get("verdict")
+
+
 def suggest(symbols=None, ctx=None, use_cache=True):
     """Rank the watchlist by the impulse×hold pick score. Fail-soft → empty list.
     Cached ~15 min keyed on the watchlist set (the fetch+score is the slow part), so
@@ -386,6 +419,7 @@ def suggest(symbols=None, ctx=None, use_cache=True):
         return {"as_of": None, "count": 0, "ctx": ctx, "suggestions": [],
                 "note": "No data — upload a watchlist (and the names must resolve on yfinance)."}
     _attach_cross_sectional(rows)
+    _attach_fundamentals(rows)
     sugg = [score_symbol(r, ctx) for r in rows.values()]
     sugg.sort(key=lambda x: x["pick"], reverse=True)
     as_of = None
@@ -397,9 +431,10 @@ def suggest(symbols=None, ctx=None, use_cache=True):
     result = {
         "as_of": as_of, "count": len(sugg), "ctx": ctx, "suggestions": sugg,
         "tradeable": sum(1 for s in sugg if s["tradeable"]),
-        "note": ("Impulse = setup confluence; Hold = CANSLIM quality × a liquidity/price/"
-                 "trend floor; Pick = geomean(impulse, hold) × regime. Stops are 2×ATR. "
-                 "Off-universe names use on-demand yfinance fundamentals (best-effort)."),
+        "note": ("Impulse = setup confluence; Hold = CANSLIM quality blended with the "
+                 "research fundamental score, × a liquidity/price/trend floor; Pick = "
+                 "geomean(impulse, hold) × regime. Stops are 2×ATR. Off-universe names use "
+                 "on-demand yfinance fundamentals (best-effort)."),
     }
     _SUGGEST_CACHE.update(key=key, at=time.time(), result=result)
     return result

@@ -137,6 +137,12 @@
     <span class="badge" id="harness-badge">loading…</span>
   </a>
 
+  <a class="card" href="/research.html">
+    <h2>Fundamental Researcher</h2>
+    <p>Per-ticker fundamental conviction read (growth, accumulation, sponsorship, valuation, trend, RS → 0-99 + bull/bear thesis) to back a setup — plus sector/theme primers. The score folds into the harness pick HOLD axis. Math gathers, Claude writes. (Research &amp; modeling)</p>
+    <span class="badge" id="research-badge">loading…</span>
+  </a>
+
   <a class="card" href="/rrg.html">
     <h2>Relative Rotation Graph</h2>
     <p>Sector rotation vs SPY — JdK-style RS-Ratio / RS-Momentum with Elliott-wave phase model. ROTATE IN/OUT calls per sector.</p>
@@ -415,6 +421,22 @@ async function loadMacroBadge() {
   }
 }
 loadMacroBadge();
+
+async function loadResearchBadge() {
+  const el = document.getElementById('research-badge');
+  try {
+    const r = await fetch('/api/research/summary');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    if (!d.text || d.text === 'no data') { el.textContent = 'open to research'; el.className = 'badge'; return; }
+    el.textContent = 'lead: ' + d.text;
+    el.className = 'badge ' + (d.status === 'ok' ? 'healthy' : 'neutral');
+  } catch {
+    el.textContent = 'open to research';
+    el.className = 'badge';
+  }
+}
+loadResearchBadge();
 </script>
 
 </body>

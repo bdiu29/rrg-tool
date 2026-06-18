@@ -58,7 +58,8 @@ def build_context():
         sug = picks.cached_suggestions()
         if sug:
             ctx["suggestions"] = [{k: s.get(k) for k in ("symbol", "pick", "impulse",
-                                   "hold", "tradeable", "stop", "why")}
+                                   "hold", "fund_score", "fund_verdict", "tradeable",
+                                   "stop", "why")}
                                   for s in sug.get("suggestions", [])[:15]]
         else:
             ctx["suggestions_note"] = "not computed yet — run Get Suggestions for live picks"

@@ -24,6 +24,7 @@ from modules.canslim import register_routes as register_canslim
 from modules.news import register_routes as register_news
 from modules.macro import register_routes as register_macro
 from modules.harness import register_routes as register_harness
+from modules.research import register_routes as register_research
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +86,7 @@ register_canslim(router)
 register_news(router)
 register_macro(router)
 register_harness(router)
+register_research(router)
 
 
 # ---------------------------------------------------------------------------
