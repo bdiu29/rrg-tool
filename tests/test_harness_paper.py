@@ -5,6 +5,7 @@ idempotent step, both books incl. the SPY hedge leg, stop-outs, mark-to-market, 
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from modules.harness import paper, store
 
@@ -97,6 +98,27 @@ class TestStep(_PaperTestBase):
         self.assertNotIn("AAA", store.get_positions("long_only"))
         stops = [f for f in store.get_fills("long_only") if f["reason"] == "stop"]
         self.assertTrue(stops)
+
+    def test_catch_up_backfills_missed_days(self):
+        import pandas as pd
+        paper.step(asof="2026-06-15", prices={"AAA": 100.0, "SPY": 400.0, "RSP": 150.0},
+                   decision=self.DECISION, suggestions=[_sugg("AAA", 80, 50)])
+        idx = pd.to_datetime(["2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18"])
+        panel = pd.DataFrame({"AAA": [100.0, 110.0, 120.0, 130.0],
+                              "SPY": [400.0, 402.0, 404.0, 406.0],
+                              "RSP": [150.0, 151.0, 152.0, 153.0]}, index=idx)
+        with mock.patch("modules.rrg.signal._fetch_close", return_value=panel):
+            n = paper.catch_up(today="2026-06-18")          # reopened after a 2-day gap
+        self.assertEqual(n, 4)                               # 06-16 + 06-17, both books
+        lo = {s["date"]: s for s in store.get_steps("long_only")}
+        self.assertIn("2026-06-16", lo)
+        self.assertIn("2026-06-17", lo)
+        self.assertGreater(lo["2026-06-17"]["equity"], lo["2026-06-16"]["equity"])  # AAA ↑
+        self.assertEqual(lo["2026-06-16"]["turnover"], 0.0)  # marks only, no trades
+        self.assertEqual(lo["2026-06-16"]["spy"], 402.0)     # benchmark marked point-in-time
+
+    def test_catch_up_noop_without_prior_steps(self):
+        self.assertEqual(paper.catch_up(today="2026-06-18"), 0)   # nothing held yet
 
     def test_mark_to_market(self):
         sugg = [_sugg("AAA", 80, 50)]

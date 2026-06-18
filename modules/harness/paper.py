@@ -183,6 +183,75 @@ def _fetch_prices(symbols):
     return out
 
 
+def catch_up(today=None):
+    """Mark-to-market catch-up for missed TRADING days. Between each book's last step and
+    today, mark the HELD positions at each missed day's ACTUAL close (point-in-time,
+    ffilled, no re-selection, no lookahead) and record one equity point per day — no
+    fills, no cash change, no rebalance (today's rebalance is step()'s job). This keeps the
+    equity curve dense + the drawdown honest through gaps when the app is closed for days.
+    Trading days come from the price panel itself (so weekends/holidays are skipped for
+    free). Fail-soft → 0. Returns the number of (date, book) rows backfilled."""
+    from modules.rrg import signal
+    today = today or _date.today().isoformat()
+
+    held, last_info = set(), {}
+    for book in BOOKS:
+        steps = store.get_steps(book)
+        if steps:
+            last_info[book] = steps[-1]
+            held |= set(store.get_positions(book))
+    if not last_info:
+        return 0                                    # nothing stepped yet → no gap to fill
+
+    syms = sorted(held | {HEDGE_SYM, "RSP"})
+    try:
+        close = signal._fetch_close(syms, "1d")     # ffilled, Timestamp index, cached
+    except Exception:
+        return 0
+    if close is None or getattr(close, "empty", True):
+        return 0
+    panel = {ts.strftime("%Y-%m-%d"): ts for ts in close.index}
+    panel_dates = sorted(panel)
+
+    def px(ts, s):
+        try:
+            v = float(close.at[ts, s])
+        except Exception:
+            return None
+        return None if math.isnan(v) else v
+
+    n = 0
+    for book, last in last_info.items():
+        last_date = last["date"]
+        if last_date >= today:
+            continue
+        cash = (store.get_account(book) or {}).get("cash", 0.0)
+        positions = store.get_positions(book)
+        for d in panel_dates:
+            if not (last_date < d < today) or store.step_exists(d, book):
+                continue                            # only the gap, never re-backfill
+            ts = panel[d]
+            equity, gross, net = cash, 0.0, 0.0
+            for s, p in positions.items():
+                pr = px(ts, s)
+                if pr is None:
+                    continue
+                equity += p["shares"] * pr
+                gross += abs(p["shares"]) * pr
+                net += p["shares"] * pr
+            store.record_step({
+                "date": d, "book": book, "equity": round(equity, 2),
+                "gross": round(gross, 2), "net": round(net, 2), "cash": round(cash, 2),
+                "turnover": 0.0, "cost_paid": 0.0,
+                "n_long": sum(1 for s, p in positions.items()
+                              if p["shares"] > 0 and s != HEDGE_SYM),
+                "score": last.get("score"), "stance": last.get("stance"),
+                "spy": px(ts, HEDGE_SYM), "rsp": px(ts, "RSP"),
+            })
+            n += 1
+    return n
+
+
 def step(asof=None, prices=None, decision=None, suggestions=None, force=False):
     """Advance ONE trading day for both books. Idempotent by default (a second call for
     the same date is a no-op) — the autonomous daemon relies on that. `force=True` (a
@@ -190,6 +259,12 @@ def step(asof=None, prices=None, decision=None, suggestions=None, force=False):
     safe because re-stepping with unchanged data nets ~no trades (the dust filter)."""
     store.init_db()
     date = asof or _date.today().isoformat()
+    # live path (no injected inputs) → first backfill any missed trading days, then step
+    if asof is None and prices is None and decision is None and suggestions is None:
+        try:
+            catch_up(today=date)
+        except Exception:
+            pass
     pending = [b for b in BOOKS if force or not store.step_exists(date, b)]
     if not pending:
         return {"date": date, "skipped": True, "reason": "already stepped today",
