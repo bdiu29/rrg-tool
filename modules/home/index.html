@@ -191,6 +191,12 @@
     <span class="badge" id="news-badge">loading…</span>
   </a>
 
+  <a class="card" href="/macro.html">
+    <h2>Macro Regime</h2>
+    <p>The growth × inflation backdrop scored as 4-quadrant probabilities (Goldilocks / Reflation / Stagflation / Disinflation), plus "signals of health" — yield curve, credit, VIX, breadth, copper/gold — each in plain English. Feeds the harness brief.</p>
+    <span class="badge" id="macro-badge">loading…</span>
+  </a>
+
 </div>
 
 <footer>Free data sources · local only · not investment advice</footer>
@@ -393,6 +399,22 @@ async function loadHarnessBadge() {
   }
 }
 loadHarnessBadge();
+
+async function loadMacroBadge() {
+  const el = document.getElementById('macro-badge');
+  try {
+    const r = await fetch('/api/macro/summary');
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    if (!d.text || d.cold) { el.textContent = 'open to load'; el.className = 'badge'; return; }
+    el.textContent = d.text;
+    el.className = 'badge ' + (d.status === 'ok' ? 'healthy' : d.status === 'accent' ? 'accent' : 'neutral');
+  } catch {
+    el.textContent = 'unavailable';
+    el.className = 'badge';
+  }
+}
+loadMacroBadge();
 </script>
 
 </body>

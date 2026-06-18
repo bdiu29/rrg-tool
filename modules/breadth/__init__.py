@@ -197,6 +197,8 @@ def build_summary(universe_key=DEFAULT_UNIVERSE):
             "pct_above_50":  _f(agg["pct_above_50"].iloc[-1]),
             "pct_above_200": _f(agg["pct_above_200"].iloc[-1]),
             "net_advances":  _f(agg["advances"].iloc[-1] - agg["declines"].iloc[-1]),
+            "advances":      _f(agg["advances"].iloc[-1]),
+            "declines":      _f(agg["declines"].iloc[-1]),
             "nh_nl":         _f(der["nh_nl"].iloc[-1]),
         },
         "note": SURVIVORSHIP_NOTE,
