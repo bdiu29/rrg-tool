@@ -56,6 +56,11 @@ CREATE TABLE IF NOT EXISTS paper_decision (
     date      TEXT PRIMARY KEY,
     stance    TEXT, score REAL, posture TEXT, picks_json TEXT
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
 """
 
 
@@ -218,3 +223,20 @@ def reset_paper():
         for t in ("paper_account", "paper_position", "paper_step", "paper_fill",
                   "paper_decision"):
             conn.execute(f"DELETE FROM {t}")
+
+
+# ---------------------------------------------------------------------------
+# Settings (trading mode, last auto-step, …)
+# ---------------------------------------------------------------------------
+
+def get_setting(key, default=None):
+    with connect() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+    return row[0] if row else default
+
+
+def set_setting(key, value):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, str(value)))

@@ -184,6 +184,14 @@
   .tag { font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px;
          border-radius: 9px; background: var(--panel2); color: var(--dim); }
   .tag.go { background: rgba(26,157,107,.14); color: var(--green); }
+  /* chat */
+  .chatlog { max-height: 360px; overflow-y: auto; margin-bottom: 10px; display: flex;
+             flex-direction: column; gap: 8px; }
+  .msg { padding: 8px 12px; border-radius: 9px; font-size: 12.5px; line-height: 1.5;
+         max-width: 90%; white-space: pre-wrap; }
+  .msg.user { background: var(--accent); color: #fff; align-self: flex-end; }
+  .msg.bot  { background: var(--panel2); color: var(--ink); align-self: flex-start; }
+  .msg.bot.err { color: var(--red); }
   .empty { color: var(--dim); text-align: center; padding: 28px; font-size: 12px; }
   .note { font-size: 10px; color: var(--dim); line-height: 1.7; margin-top: 10px; }
   .note b { color: var(--ink); }
@@ -305,10 +313,25 @@
     (long − SPY) book, both cost-modeled. The hedged book's cost-adjusted return vs SPY IS the gate — real money stays off until it's
     clearly positive. Paper only.</div>
   <div class="wl-controls">
+    <span class="lite">Mode:</span>
+    <label class="lite"><input type="radio" name="tmode" value="manual"> Manual</label>
+    <label class="lite"><input type="radio" name="tmode" value="autonomous"> Autonomous</label>
+    <span id="modeStatus" class="lite"></span>
+  </div>
+  <div class="wl-controls" style="margin-top:8px">
     <button id="paperStep">▶ Step today</button>
     <button id="paperRefresh">Refresh</button>
   </div>
   <div id="paperResult" style="margin-top:14px"><span class="empty">loading…</span></div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Ask the Harness <span class="lite">— AI assist, grounded in the signals above</span></div>
+  <div id="chatLog" class="chatlog"><span class="empty">Ask about your watchlist picks, the paper book, or the regime. Answers are anchored to the deterministic signals — the assistant explains, it doesn't override the math. (Needs the local Claude CLI.)</span></div>
+  <div class="wl-controls">
+    <input type="text" id="chatInput" placeholder="e.g. what are my best setups right now, and where would my stops be?" style="flex:1;min-width:240px;padding:6px 8px">
+    <button id="chatSend">Send</button>
+  </div>
 </div>
 
 <div class="panel">
@@ -678,6 +701,68 @@ $("paperStep").onclick = async () => {
   } catch (e) { /* surfaced on reload */ }
   finally { $("paperStep").disabled = false; $("paperStep").textContent = "▶ Step today"; }
 };
+
+// --- Trading Mode (Phase 4) ---
+function applyMode(d) {
+  const mode = (d && d.mode) || "manual";
+  document.querySelectorAll('input[name=tmode]').forEach(r => { r.checked = (r.value === mode); });
+  const last = d && d.daemon && d.daemon.last_auto_step;
+  $("modeStatus").textContent = mode === "autonomous"
+    ? `· daemon steps the paper book at the close${last ? ` (last ${last})` : ""}`
+    : "· you drive (manual / AI-assist)";
+}
+async function loadMode() {
+  try { applyMode(await (await fetch("/api/harness/mode")).json()); } catch {}
+}
+loadMode();
+document.querySelectorAll('input[name=tmode]').forEach(radio => {
+  radio.onchange = async () => {
+    try {
+      const r = await fetch("/api/harness/mode", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: radio.value }) });
+      applyMode(await r.json());
+    } catch { loadMode(); }
+  };
+});
+
+// --- Ask the Harness (grounded chat) ---
+const chatHistory = [];
+function addMsg(role, text, isErr) {
+  const log = $("chatLog");
+  if (log.querySelector(".empty")) log.innerHTML = "";
+  const div = document.createElement("div");
+  div.className = "msg " + (role === "user" ? "user" : "bot") + (isErr ? " err" : "");
+  div.textContent = text;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+async function sendChat() {
+  const msg = $("chatInput").value.trim();
+  if (!msg) return;
+  $("chatInput").value = "";
+  addMsg("user", msg);
+  chatHistory.push({ role: "user", content: msg });
+  $("chatSend").disabled = true; $("chatSend").textContent = "…";
+  addMsg("bot", "thinking…");
+  const pending = $("chatLog").lastChild;
+  try {
+    const r = await fetch("/api/harness/chat", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: msg, history: chatHistory.slice(0, -1) }) });
+    const d = await r.json();
+    const ans = d.answer || d.error || "no response";
+    pending.textContent = ans;
+    pending.className = "msg bot" + (d.llm_used ? "" : " err");
+    chatHistory.push({ role: "assistant", content: ans });
+  } catch (e) {
+    pending.textContent = "chat failed: " + esc(e); pending.className = "msg bot err";
+  } finally {
+    $("chatSend").disabled = false; $("chatSend").textContent = "Send";
+  }
+}
+$("chatSend").onclick = sendChat;
+$("chatInput").addEventListener("keydown", e => { if (e.key === "Enter") sendChat(); });
 </script>
 </body>
 </html>

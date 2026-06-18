@@ -9,6 +9,8 @@ Harness CLI — print today's market brief from the terminal.
     /usr/bin/python3 -m modules.harness.cli --picks       # ranked impulse×hold suggestions
     /usr/bin/python3 -m modules.harness.cli --paper-step  # advance the paper books one day
     /usr/bin/python3 -m modules.harness.cli --paper       # paper-book state + the gate
+    /usr/bin/python3 -m modules.harness.cli --mode [manual|autonomous]   # show/set trading mode
+    /usr/bin/python3 -m modules.harness.cli --chat "your question"        # grounded AI assist
 
 Same code path as GET /api/harness. No-LLM by default so it's free and fast.
 """
@@ -31,6 +33,9 @@ def main(argv=None):
     argv = argv if argv is not None else sys.argv[1:]
     use_llm  = "--llm" in argv
     as_json  = "--json" in argv
+
+    from modules.harness import store          # ensure the schema exists for any CLI path
+    store.init_db()
 
     if "--backtest" in argv:
         from modules.harness import backtest
@@ -107,6 +112,30 @@ def main(argv=None):
         print(f"  GATE ({g['days']}d): hedged ret {g['hedged_total_return']}%  "
               f"vs SPY {g['hedged_vs_spy']}  cost ${g['cost_paid']}")
         print(f"  {g['note']}")
+        print()
+        return
+
+    if "--mode" in argv:
+        from modules.harness import store, paper_poller
+        val = _arg_value(argv, "--mode")
+        if val:
+            val = val.lower()
+            if val not in ("manual", "autonomous"):
+                print("  mode must be 'manual' or 'autonomous'"); return
+            store.set_setting("trading_mode", val)
+            print(f"  trading mode → {val}" + (" (paper daemon will auto-step at the close)"
+                                               if val == "autonomous" else " (you drive)"))
+        else:
+            print(f"  trading mode: {store.get_setting('trading_mode', 'manual')}  "
+                  f"(last auto-step {store.get_setting('last_auto_step') or '—'})")
+        return
+
+    msg = _arg_value(argv, "--chat")
+    if msg:
+        from modules.harness import chat
+        res = chat.answer(msg)
+        print()
+        print(res["answer"])
         print()
         return
 

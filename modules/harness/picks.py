@@ -23,8 +23,12 @@ symbol is in it, else yfinance on demand — so ANY uploaded watchlist works). T
 """
 
 import math
+import time
 
 from modules.harness import store
+
+_SUGGEST_TTL = 15 * 60
+_SUGGEST_CACHE = {"key": None, "at": 0.0, "result": None}
 
 # Gates / sizing — judgment-set like the rest of the project's confluence weights.
 MIN_HOLD     = 45.0     # below this a name isn't "solid to hold" → not tradeable
@@ -365,9 +369,17 @@ def _attach_cross_sectional(rows):
         r["_float_pctl"] = so_map(so_vals[s]) if so_vals[s] is not None else None
 
 
-def suggest(symbols=None, ctx=None):
-    """Rank the watchlist by the impulse×hold pick score. Fail-soft → empty list."""
+def suggest(symbols=None, ctx=None, use_cache=True):
+    """Rank the watchlist by the impulse×hold pick score. Fail-soft → empty list.
+    Cached ~15 min keyed on the watchlist set (the fetch+score is the slow part), so
+    repeat UI loads and the chat's grounding are instant; `use_cache=False` forces a
+    fresh compute."""
     symbols = symbols if symbols is not None else store.get_watchlist()
+    key = tuple(sorted(symbols))
+    if (use_cache and _SUGGEST_CACHE["key"] == key and _SUGGEST_CACHE["result"]
+            and time.time() - _SUGGEST_CACHE["at"] < _SUGGEST_TTL):
+        return _SUGGEST_CACHE["result"]
+
     ctx = ctx or _market_ctx()
     rows = _rows(symbols)
     if not rows:
@@ -382,10 +394,20 @@ def suggest(symbols=None, ctx=None):
         if d:
             as_of = str(d)
             break
-    return {
+    result = {
         "as_of": as_of, "count": len(sugg), "ctx": ctx, "suggestions": sugg,
         "tradeable": sum(1 for s in sugg if s["tradeable"]),
         "note": ("Impulse = setup confluence; Hold = CANSLIM quality × a liquidity/price/"
                  "trend floor; Pick = geomean(impulse, hold) × regime. Stops are 2×ATR. "
                  "Off-universe names use on-demand yfinance fundamentals (best-effort)."),
     }
+    _SUGGEST_CACHE.update(key=key, at=time.time(), result=result)
+    return result
+
+
+def cached_suggestions():
+    """Last computed suggestions if still fresh, else None — for chat grounding (never
+    triggers a fetch)."""
+    if _SUGGEST_CACHE["result"] and time.time() - _SUGGEST_CACHE["at"] < _SUGGEST_TTL:
+        return _SUGGEST_CACHE["result"]
+    return None

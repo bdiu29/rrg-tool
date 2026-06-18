@@ -195,9 +195,9 @@ def _handle_picks(req):
 
 
 def _handle_paper(req):
-    """GET → both paper books' state + the gate. POST /step → advance one trading day
-    (idempotent). POST /reset → wipe the books (requires {confirm:true})."""
-    from modules.harness import paper
+    """GET → both paper books' state + the gate + daemon/mode. POST /step → advance one
+    trading day (idempotent). POST /reset → wipe the books (requires {confirm:true})."""
+    from modules.harness import paper, paper_poller, store
     path = req.path.rstrip("/")
     try:
         if path.endswith("/step"):
@@ -206,12 +206,48 @@ def _handle_paper(req):
             body = req.json_body() if req.method == "POST" else {}
             if not (body or {}).get("confirm"):
                 return Response.error("reset requires {\"confirm\": true}", 400)
-            from modules.harness import store
             store.reset_paper()
             return Response.json({"reset": True})
-        return Response.json(paper.state())
+        st = paper.state()
+        st["mode"] = store.get_setting("trading_mode", "manual")
+        st["daemon"] = paper_poller.status()
+        return Response.json(st)
     except Exception as e:
         return Response.error(f"paper failed: {e}", 500)
+
+
+VALID_MODES = ("manual", "autonomous")
+
+
+def _handle_mode(req):
+    """GET → the trading mode + daemon status. POST {mode} → switch Manual ⇄ Autonomous
+    (autonomous = the daemon auto-steps the PAPER book at the close; never live)."""
+    from modules.harness import store, paper_poller
+    if req.method == "POST":
+        try:
+            body = req.json_body() or {}
+        except Exception:
+            body = {}
+        mode = str(body.get("mode", "")).lower()
+        if mode not in VALID_MODES:
+            return Response.error(f"mode must be one of {VALID_MODES}", 400)
+        store.set_setting("trading_mode", mode)
+        paper_poller.start()                       # idempotent; inert until autonomous
+    return Response.json({"mode": store.get_setting("trading_mode", "manual"),
+                          "daemon": paper_poller.status()})
+
+
+def _handle_chat(req):
+    """POST {message, history} → a grounded answer (anchored to the deterministic state)."""
+    try:
+        body = req.json_body() or {}
+    except Exception:
+        body = {}
+    try:
+        from modules.harness import chat
+        return Response.json(chat.answer(body.get("message", ""), body.get("history")))
+    except Exception as e:
+        return Response.error(f"chat failed: {e}", 500)
 
 
 def _handle_backtest(req):
@@ -236,8 +272,9 @@ def _handle_backtest(req):
 
 def register_routes(router):
     try:
-        from modules.harness import store
+        from modules.harness import store, paper_poller
         store.init_db()
+        paper_poller.start()        # idempotent; a no-op until the mode is autonomous
     except Exception:
         pass
     router.get("/harness.html",          _handle_page)
@@ -251,3 +288,6 @@ def register_routes(router):
     router.get("/api/harness/paper",        _handle_paper)
     router.post("/api/harness/paper/step",  _handle_paper)
     router.post("/api/harness/paper/reset", _handle_paper)
+    router.get("/api/harness/mode",  _handle_mode)
+    router.post("/api/harness/mode", _handle_mode)
+    router.post("/api/harness/chat", _handle_chat)
