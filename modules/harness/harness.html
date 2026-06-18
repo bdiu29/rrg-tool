@@ -165,6 +165,25 @@
   .verdict { background: var(--panel2); border-left: 3px solid var(--accent);
              border-radius: 7px; padding: 10px 14px; font-size: 12.5px; line-height: 1.55;
              margin: 14px 0; color: var(--ink); }
+  /* watchlist suggestions */
+  .wl-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+  .wl-controls input[type=file] { font-size: 12px; max-width: 260px; }
+  .sg { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px; }
+  .sg th { text-align: right; font-weight: 600; color: var(--dim); font-size: 9.5px;
+           text-transform: uppercase; letter-spacing: 0.05em; padding: 6px 8px;
+           border-bottom: 1px solid var(--grid); }
+  .sg th.l, .sg td.l { text-align: left; }
+  .sg td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+  .sg td.sym { font-weight: 700; color: var(--accent); }
+  .sg tr.no td.sym { color: var(--dim); font-weight: 600; }
+  .sg .why { color: var(--dim); font-size: 11px; }
+  .bar { display: inline-block; width: 46px; height: 7px; border-radius: 4px; background: var(--grid); position: relative; vertical-align: middle; }
+  .bar > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+  .bar.imp > i { background: var(--blue); } .bar.hold > i { background: var(--green); }
+  .pickv { font-weight: 700; } .pickv.go { color: var(--green); } .pickv.no { color: var(--dim); }
+  .tag { font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 6px;
+         border-radius: 9px; background: var(--panel2); color: var(--dim); }
+  .tag.go { background: rgba(26,157,107,.14); color: var(--green); }
   .empty { color: var(--dim); text-align: center; padding: 28px; font-size: 12px; }
   .note { font-size: 10px; color: var(--dim); line-height: 1.7; margin-top: 10px; }
   .note b { color: var(--ink); }
@@ -233,6 +252,20 @@
 <div class="panel">
   <div class="panel-title">Themes This Week</div>
   <div class="cols" id="themes"><span class="empty">loading…</span></div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Your Watchlist — Trade Suggestions</div>
+  <div class="meta" style="margin-bottom:10px">Upload a TradingView watchlist export (CSV/.txt). The app ranks your names by
+    <b>impulse</b> (setup confluence) × <b>hold-ability</b> (CANSLIM quality) — strong setups on stocks solid enough to hold if the
+    move fails. Stops are 2×ATR. <span id="wlStatus" class="lite"></span></div>
+  <div class="wl-controls">
+    <input type="file" id="wlFile" accept=".csv,.txt,text/csv,text/plain">
+    <label class="lite"><input type="checkbox" id="wlReplace" checked> replace</label>
+    <button id="wlUpload">Upload</button>
+    <button id="runPicks">▶ Get suggestions</button>
+  </div>
+  <div id="picksResult" style="margin-top:14px"></div>
 </div>
 
 <div class="room"><span class="lbl">Engine Room</span><span class="line"></span></div>
@@ -513,6 +546,74 @@ $("runBt").onclick = async () => {
     $("btResult").innerHTML = '<span class="empty">failed: ' + esc(e) + '</span>';
   } finally {
     $("runBt").disabled = false; $("runBt").textContent = "▶ Run referee (~4s)";
+  }
+};
+
+// --- Watchlist & Suggestions (Phase 3 / Layer A) ---
+const bar = (cls, v) => `<span class="bar ${cls}"><i style="width:${Math.max(0,Math.min(100,v||0))}%"></i></span>`;
+
+async function loadWlStatus() {
+  try {
+    const r = await fetch("/api/harness/watchlist");
+    const d = await r.json();
+    const n = (d.symbols || []).length;
+    $("wlStatus").textContent = n ? `· ${n} symbols loaded` : "· no watchlist yet — upload one";
+  } catch { /* leave blank */ }
+}
+loadWlStatus();
+
+$("wlUpload").onclick = () => {
+  const f = $("wlFile").files[0];
+  if (!f) { alert("Choose a TradingView CSV/.txt export first."); return; }
+  const reader = new FileReader();
+  reader.onload = async () => {
+    $("wlUpload").disabled = true; $("wlUpload").textContent = "uploading…";
+    try {
+      const r = await fetch("/api/harness/watchlist", { method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: reader.result, replace: $("wlReplace").checked }) });
+      const d = await r.json();
+      $("wlStatus").textContent = `· parsed ${d.parsed}, watchlist now ${d.count} symbols`;
+    } catch (e) { $("wlStatus").textContent = "· upload failed"; }
+    finally { $("wlUpload").disabled = false; $("wlUpload").textContent = "Upload"; }
+  };
+  reader.readAsText(f);
+};
+
+function renderPicks(rep) {
+  if (rep.error) { $("picksResult").innerHTML = `<span class="empty">${esc(rep.error)}</span>`; return; }
+  if (!rep.suggestions || !rep.suggestions.length) {
+    $("picksResult").innerHTML = `<span class="empty">${esc(rep.note || "no suggestions")}</span>`; return; }
+  const c = rep.ctx || {};
+  let h = `<div class="meta">${rep.count} names · regime ${esc(c.regime)}`
+        + (c.event_risk ? ' · <b style="color:var(--red)">event risk</b>' : '')
+        + ` · ${rep.tradeable} tradeable · as of ${esc(rep.as_of)}</div>`;
+  h += `<table class="sg"><tr><th class="l">Stock</th><th>Pick</th><th class="l">Impulse</th>`
+     + `<th class="l">Hold</th><th>Stop</th><th class="l">Why</th></tr>`;
+  for (const s of rep.suggestions) {
+    const go = s.tradeable;
+    h += `<tr class="${go ? "" : "no"}">
+      <td class="l sym">${esc(s.symbol)}${go ? ' <span class="tag go">buy</span>' : ` <span class="tag">${esc(s.reason||"watch")}</span>`}</td>
+      <td><span class="pickv ${go ? "go" : "no"}">${s.pick}</span></td>
+      <td class="l">${bar("imp", s.impulse)} ${s.impulse}</td>
+      <td class="l">${bar("hold", s.hold)} ${s.hold}${s.canslim!=null ? ` <span class="lite">C${s.canslim}</span>`:""}</td>
+      <td>${s.stop!=null ? s.stop.toFixed(2) : "—"}${s.risk_pct!=null ? ` <span class="lite">−${s.risk_pct}%</span>`:""}</td>
+      <td class="l why">${esc((s.why||[]).join(" · "))}</td></tr>`;
+  }
+  h += `</table><div class="note">${esc(rep.note)}</div>`;
+  $("picksResult").innerHTML = h;
+}
+
+$("runPicks").onclick = async () => {
+  $("runPicks").disabled = true; $("runPicks").textContent = "scoring…";
+  $("picksResult").innerHTML = '<span class="empty">fetching data + scoring your watchlist…</span>';
+  try {
+    const r = await fetch("/api/harness/picks");
+    renderPicks(await r.json());
+  } catch (e) {
+    $("picksResult").innerHTML = '<span class="empty">failed: ' + esc(e) + '</span>';
+  } finally {
+    $("runPicks").disabled = false; $("runPicks").textContent = "▶ Get suggestions";
   }
 };
 </script>
