@@ -63,6 +63,39 @@ class TestClusterAndBaseline(FlowDBTest):
         self.assertEqual(store.ticker_baseline("AAPL", "2026-06-15"), 2_000_000)
 
 
+class TestTickerFilter(FlowDBTest):
+    def _seed(self):
+        r = {"classification": "conviction", "conviction": 90,
+             "direction": "bullish", "factors": []}
+        for sym, und in (("AAPL_C200", "AAPL"), ("TSLA_C300", "TSLA"),
+                         ("NVDA_C900", "NVDA")):
+            c = dict(_conviction_contract(), option_symbol=sym, underlying=und)
+            store.upsert_flow_signal("2026-06-15", c, r, {})
+
+    def test_normalize_string_and_list(self):
+        self.assertEqual(store._ticker_list("nvda, aapl tsla"),
+                         ["NVDA", "AAPL", "TSLA"])
+        self.assertEqual(store._ticker_list(["aapl", "aapl", " tsla "]),
+                         ["AAPL", "TSLA"])
+        self.assertEqual(store._ticker_list(None), [])
+        self.assertEqual(store._ticker_list("  "), [])
+
+    def test_single_ticker_filter(self):
+        self._seed()
+        feed = store.list_flow_signals("2026-06-15", underlying="aapl")
+        self.assertEqual([s["underlying"] for s in feed], ["AAPL"])
+
+    def test_multi_ticker_filter(self):
+        self._seed()
+        feed = store.list_flow_signals("2026-06-15", underlying="AAPL NVDA")
+        self.assertEqual(sorted(s["underlying"] for s in feed), ["AAPL", "NVDA"])
+
+    def test_empty_ticker_filter_returns_all(self):
+        self._seed()
+        feed = store.list_flow_signals("2026-06-15", underlying="")
+        self.assertEqual(len(feed), 3)
+
+
 class TestAlertDedupe(FlowDBTest):
     def test_alert_fires_once_per_contract_rule_day(self):
         a1 = store.insert_alert("2026-06-15", "AAPL_C200", "flow:conviction", "bull", "m", {})

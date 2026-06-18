@@ -152,6 +152,21 @@ def upsert_flow_signal(date, c, r, confluence):
               json.dumps(r.get("factors")), json.dumps(confluence or {}), entry_exit))
 
 
+def _ticker_list(underlying):
+    """Normalize a ticker filter (str like 'NVDA, AAPL TSLA' or a list) into a
+    de-duped list of upper-case symbols. Returns [] when nothing is requested."""
+    if not underlying:
+        return []
+    if isinstance(underlying, str):
+        underlying = underlying.replace(",", " ").split()
+    seen, out = set(), []
+    for t in underlying:
+        t = str(t).strip().upper()
+        if t and t not in seen:
+            seen.add(t); out.append(t)
+    return out
+
+
 def list_flow_signals(date, min_conviction=0, classification=None, side=None,
                       bucket=None, underlying=None, limit=300):
     init_db()
@@ -163,8 +178,10 @@ def list_flow_signals(date, min_conviction=0, classification=None, side=None,
         q += " AND direction=?"; args.append(side)
     if bucket:
         q += " AND expiry_bucket=?"; args.append(bucket)
-    if underlying:
-        q += " AND underlying=?"; args.append(underlying.upper())
+    tickers = _ticker_list(underlying)
+    if tickers:
+        q += " AND underlying IN (%s)" % ",".join("?" * len(tickers))
+        args.extend(tickers)
     q += " ORDER BY conviction DESC LIMIT ?"; args.append(limit)
     with _conn() as conn:
         return [_signal_row(r) for r in conn.execute(q, args).fetchall()]
@@ -175,6 +192,17 @@ def latest_signal_date(default=None):
     with _conn() as conn:
         row = conn.execute("SELECT MAX(date) AS d FROM flow_signal").fetchone()
     return (row["d"] if row and row["d"] else default)
+
+
+def classification_counts(date):
+    """How many signals of each classification exist for the date — lets the UI
+    explain a near-empty 'conviction only' view (e.g. 3 conviction behind 626 watch)."""
+    init_db()
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT classification, COUNT(*) AS n FROM flow_signal WHERE date=? GROUP BY classification",
+            (date,)).fetchall()
+    return {r["classification"]: r["n"] for r in rows}
 
 
 def get_flow_signal(date, option_symbol):

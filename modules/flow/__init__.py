@@ -59,14 +59,18 @@ def _handle_feed(req):
     except ValueError:
         min_conv = 0
     conviction_only = _qs(req, "conviction_only", "1") in ("1", "true", "yes")
-    classification = "conviction" if conviction_only else (_qs(req, "classification") or None)
+    # When drilling into specific tickers, show all flow on them (don't hide
+    # watch/notable activity behind the default conviction-only cut).
+    tickers = store._ticker_list(_qs(req, "tickers") or _qs(req, "underlying"))
+    classification = None if tickers else ("conviction" if conviction_only else (_qs(req, "classification") or None))
     signals = store.list_flow_signals(
         date, min_conviction=min_conv, classification=classification,
         side=_qs(req, "side"), bucket=_qs(req, "bucket"),
-        underlying=_qs(req, "underlying"),
+        underlying=tickers,
         limit=int(_qs(req, "limit", "300") or 300))
     return Response.json({
         "date": date, "count": len(signals), "signals": signals,
+        "tickers": tickers, "counts": store.classification_counts(date),
         "status": poller.status(),
     })
 

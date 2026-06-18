@@ -38,9 +38,12 @@
     padding:16px 18px; margin-bottom:18px; }
   .controls { display:flex; flex-wrap:wrap; gap:14px; align-items:center; }
   .controls label { font-size:11px; color:var(--dim); display:flex; align-items:center; gap:6px; }
-  select, button { font-family:'Spline Sans Mono',monospace; font-size:11px; color:var(--ink);
-    background:var(--bg); border:1px solid var(--grid); border-radius:8px; padding:6px 10px;
-    cursor:pointer; }
+  select, button, input[type=text] { font-family:'Spline Sans Mono',monospace; font-size:11px;
+    color:var(--ink); background:var(--bg); border:1px solid var(--grid); border-radius:8px;
+    padding:6px 10px; cursor:pointer; }
+  input[type=text] { cursor:text; width:130px; text-transform:uppercase; }
+  input[type=text]::placeholder { color:var(--dim); text-transform:none; opacity:0.7; }
+  input[type=text]:focus { outline:none; border-color:var(--accent); }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
   button:hover { border-color:var(--accent); }
   .toggle { font-weight:600; color:var(--ink); }
@@ -50,12 +53,24 @@
     color:var(--dim); text-align:right; padding:8px 9px; border-bottom:1px solid var(--grid);
     white-space:nowrap; }
   thead th.l { text-align:left; }
+  thead th.sortable { cursor:pointer; user-select:none; }
+  thead th.sortable:hover { color:var(--accent); }
+  thead th.active { color:var(--accent); }
+  thead th .arrow { font-size:8px; margin-left:3px; }
+
+  .summary { font-size:11.5px; color:var(--dim); margin-bottom:12px; padding-bottom:11px;
+    border-bottom:1px solid var(--grid); display:flex; flex-wrap:wrap; gap:6px 16px; align-items:baseline; }
+  .summary b { color:var(--ink); font-weight:600; }
+  .summary .pos { color:var(--green); } .summary .neg { color:var(--red); }
+  .summary a { color:var(--accent); text-decoration:underline; cursor:pointer; }
+  .summary:empty { display:none; }
   tbody td { font-size:12px; padding:9px; text-align:right; border-bottom:1px solid var(--grid);
     white-space:nowrap; }
   td.l { text-align:left; }
   tbody tr.sig { cursor:pointer; }
   tbody tr.sig:hover { background:rgba(22,51,110,0.05); }
-  .tk { color:var(--accent); font-weight:600; }
+  .tk { color:var(--accent); font-weight:600; cursor:pointer; }
+  .tk:hover { text-decoration:underline; }
   .pos { color:var(--green); } .neg { color:var(--red); } .muted { color:var(--dim); }
 
   .chip { display:inline-block; font-size:9.5px; font-weight:600; letter-spacing:0.03em;
@@ -103,6 +118,10 @@
 
 <div class="panel">
   <div class="controls">
+    <label>Tickers
+      <input type="text" id="tickers" placeholder="e.g. NVDA TSLA" autocomplete="off" spellcheck="false">
+    </label>
+    <button id="clearTk" title="Clear ticker search" style="display:none;">✕</button>
     <label class="toggle"><input type="checkbox" id="convOnly" checked> Conviction only <span class="muted">(cut ~90% noise)</span></label>
     <label>Side
       <select id="side"><option value="">all</option><option value="bullish">bullish</option><option value="bearish">bearish</option></select>
@@ -115,18 +134,29 @@
     </label>
     <button id="refresh">Refresh</button>
     <button class="primary" id="sync">Scan now</button>
+    <span id="scanMsg" class="muted" style="font-size:11px;"></span>
   </div>
 </div>
 
 <div class="panel">
+  <div class="summary" id="summary"></div>
   <table>
-    <thead><tr>
-      <th class="l">Time</th><th class="l">Ticker</th><th class="l">Contract</th>
-      <th class="l">Expiry · DTE</th><th>Size</th><th>Notional</th><th>VOL/OI</th>
-      <th class="l">Aggressor</th><th>Cluster</th><th>Conv</th>
-      <th class="l">Confluence</th><th class="l">Entry/Exit</th>
+    <thead><tr id="head">
+      <th class="l sortable" data-key="ts">Time</th>
+      <th class="l sortable" data-key="underlying">Ticker</th>
+      <th class="l sortable" data-key="strike">Contract</th>
+      <th class="l sortable" data-key="dte">Expiry · DTE</th>
+      <th class="sortable" data-key="session_volume">Size</th>
+      <th class="sortable" data-key="open_interest">OI</th>
+      <th class="sortable" data-key="notional">Notional</th>
+      <th class="sortable" data-key="vol_oi_ratio">VOL/OI</th>
+      <th class="l sortable" data-key="aggressor">Aggressor</th>
+      <th class="sortable" data-key="cluster_count">Cluster</th>
+      <th class="sortable" data-key="conviction">Conv</th>
+      <th class="l sortable" data-key="confluence">Confluence</th>
+      <th class="l sortable" data-key="entry_exit">Entry/Exit</th>
     </tr></thead>
-    <tbody id="rows"><tr><td class="empty" colspan="12">loading…</td></tr></tbody>
+    <tbody id="rows"><tr><td class="empty" colspan="13">loading…</td></tr></tbody>
   </table>
 </div>
 
@@ -140,7 +170,115 @@ function fmtMoney(v) {
   if (a >= 1e3) return '$' + Math.round(v/1e3) + 'k';
   return '$' + Math.round(v);
 }
-function fmtNum(v) { return v == null ? '—' : (v >= 1000 ? (v/1000).toFixed(0)+'k' : v); }
+function fmtNum(v) {
+  if (v == null) return '—';
+  const a = Math.abs(v);
+  if (a >= 1e6) return (v/1e6).toFixed(1) + 'M';
+  if (a >= 1e3) return (v/1e3).toFixed(0) + 'k';
+  return v;
+}
+
+function confluenceCount(c) {
+  if (!c) return 0;
+  return ['sector_call','regime','vp_zone','golden_pocket','accumulation'].filter(k => c[k]).length;
+}
+
+// --- sorting -------------------------------------------------------------
+const SORT_ACCESS = {
+  ts:             s => s.ts || '',
+  underlying:     s => s.underlying || '',
+  strike:         s => s.strike ?? 0,
+  dte:            s => s.dte ?? 0,
+  session_volume: s => s.session_volume ?? 0,
+  open_interest:  s => s.open_interest ?? 0,
+  notional:       s => s.notional ?? 0,
+  vol_oi_ratio:   s => s.vol_oi_ratio == null ? Infinity : s.vol_oi_ratio,  // null = churn-free = top
+  aggressor:      s => s.aggressor || '',
+  cluster_count:  s => s.cluster_count ?? 0,
+  conviction:     s => s.conviction ?? 0,
+  confluence:     s => confluenceCount(s.confluence),
+  entry_exit:     s => s.entry_exit || '',
+};
+const STRING_KEYS = new Set(['underlying', 'aggressor', 'entry_exit']);  // default ascending
+
+let _signals = [], _tickers = [], _counts = {}, _sort = { key: 'conviction', dir: -1 };
+
+function sortSignals(arr) {
+  const acc = SORT_ACCESS[_sort.key] || SORT_ACCESS.conviction;
+  return arr.slice().sort((a, b) => {
+    const va = acc(a), vb = acc(b);
+    let cmp;
+    if (typeof va === 'number' && typeof vb === 'number') cmp = va === vb ? 0 : (va < vb ? -1 : 1);
+    else cmp = String(va).localeCompare(String(vb));
+    return cmp * _sort.dir;
+  });
+}
+
+function setSort(key) {
+  if (_sort.key === key) _sort.dir *= -1;
+  else _sort = { key, dir: STRING_KEYS.has(key) ? 1 : -1 };
+  render();
+}
+
+function updateSortIndicators() {
+  document.querySelectorAll('#head th').forEach(th => {
+    const active = th.dataset.key === _sort.key;
+    th.classList.toggle('active', active);
+    const old = th.querySelector('.arrow');
+    if (old) old.remove();
+    if (active) {
+      const a = document.createElement('span');
+      a.className = 'arrow';
+      a.textContent = _sort.dir === 1 ? '▲' : '▼';
+      th.appendChild(a);
+    }
+  });
+}
+
+function render() {
+  const sorted = sortSignals(_signals);
+  renderRows(sorted, _tickers);
+  renderSummary(sorted);
+  updateSortIndicators();
+}
+
+function hiddenHint() {
+  // When "Conviction only" is on, how many notable/watch signals sit behind it.
+  if (!$('convOnly').checked || ($('tickers').value.trim())) return '';
+  const notable = _counts.notable || 0, watch = _counts.watch || 0;
+  const hidden = notable + watch;
+  if (!hidden) return '';
+  return `<span class="muted">+${notable} notable · ${watch} watch hidden — ` +
+         `<a href="#" id="showAll">show all</a></span>`;
+}
+
+function renderSummary(signals) {
+  const el = $('summary');
+  if (!signals.length) { el.innerHTML = hiddenHint(); wireShowAll(); return; }
+  let total = 0, bull = 0, bear = 0, vol = 0, oi = 0;
+  for (const s of signals) {
+    const n = s.notional || 0;
+    total += n;
+    if (s.direction === 'bullish') bull += n;
+    else if (s.direction === 'bearish') bear += n;
+    vol += s.session_volume || 0;
+    oi  += s.open_interest || 0;
+  }
+  el.innerHTML =
+    `<span><b>${signals.length}</b> contracts</span>` +
+    `<span>total premium <b>${fmtMoney(total)}</b></span>` +
+    `<span class="pos">bull ${fmtMoney(bull)}</span>` +
+    `<span class="neg">bear ${fmtMoney(bear)}</span>` +
+    `<span>total size <b>${fmtNum(vol)}</b></span>` +
+    `<span>total OI <b>${fmtNum(oi)}</b></span>` +
+    hiddenHint();
+  wireShowAll();
+}
+
+function wireShowAll() {
+  const a = $('showAll');
+  if (a) a.onclick = e => { e.preventDefault(); $('convOnly').checked = false; load(); };
+}
 
 function confluenceChips(c) {
   if (!c) return '';
@@ -164,10 +302,20 @@ function aggrChip(s) {
   return `<span class="${cls}">${(s.aggressor||'?').replace('_',' ')}${est?' · est':''}</span>`;
 }
 
-function renderRows(signals) {
+function renderRows(signals, tickers) {
   const tb = $('rows');
   if (!signals.length) {
-    tb.innerHTML = '<tr><td class="empty" colspan="12">No unusual flow matches these filters. Try unchecking “Conviction only”, or “Scan now” during market hours.</td></tr>';
+    const hidden = (_counts.notable || 0) + (_counts.watch || 0);
+    let msg;
+    if (tickers && tickers.length) {
+      msg = `No flagged flow for <b>${tickers.join(', ')}</b> on this date. Try other tickers, or “Scan now” during market hours.`;
+    } else if ($('convOnly').checked && hidden) {
+      msg = `No <b>conviction-grade</b> flow on this date, but ${hidden} lower-grade signals exist — ` +
+            `uncheck “Conviction only” to see them.`;
+    } else {
+      msg = 'No unusual flow matches these filters. Try unchecking “Conviction only”, or “Scan now” during market hours.';
+    }
+    tb.innerHTML = `<tr><td class="empty" colspan="13">${msg}</td></tr>`;
     return;
   }
   tb.innerHTML = '';
@@ -186,10 +334,11 @@ function renderRows(signals) {
     tr.className = 'sig';
     tr.innerHTML = `
       <td class="l muted">${time}</td>
-      <td class="l"><span class="tk">${s.underlying}</span> <span class="chip ${s.direction==='bullish'?'bull':'bear'}">${s.direction}</span></td>
+      <td class="l"><span class="tk" data-tk="${s.underlying}" title="Filter to ${s.underlying}">${s.underlying}</span> <span class="chip ${s.direction==='bullish'?'bull':'bear'}">${s.direction}</span></td>
       <td class="l">${s.strike}${cp}</td>
       <td class="l muted">${s.expiry} · ${s.dte}d <span class="chip">${s.expiry_bucket}</span></td>
       <td>${fmtNum(s.session_volume)}</td>
+      <td>${fmtNum(s.open_interest)}</td>
       <td>${fmtMoney(s.notional)}</td>
       <td>${voloi}</td>
       <td class="l">${aggrChip(s)}</td>
@@ -201,8 +350,10 @@ function renderRows(signals) {
     detail.className = 'detail';
     detail.style.display = 'none';
     const factors = (s.factors || []).map(f => `<span class="factor"><b>${f[0]}</b> ${f[1]>0?'+':''}${f[1]}</span>`).join('');
-    detail.innerHTML = `<td colspan="12"><b>${s.option_symbol}</b> · ${cp==='C'?'call':'put'} · ${s.notional_vs_baseline?('size '+s.notional_vs_baseline+'× ticker avg · '):''}OI ${fmtNum(s.open_interest)} → factors: ${factors || '—'}</td>`;
+    detail.innerHTML = `<td colspan="13"><b>${s.option_symbol}</b> · ${cp==='C'?'call':'put'} · ${s.notional_vs_baseline?('size '+s.notional_vs_baseline+'× ticker avg · '):''}OI ${fmtNum(s.open_interest)} → factors: ${factors || '—'}</td>`;
     tr.onclick = () => { detail.style.display = detail.style.display === 'none' ? '' : 'none'; };
+    const tk = tr.querySelector('.tk');
+    if (tk) tk.onclick = e => { e.stopPropagation(); setTickers(s.underlying); };
     tb.appendChild(tr); tb.appendChild(detail);
   }
 }
@@ -217,27 +368,63 @@ function renderStatus(st, date, count) {
 }
 
 async function load() {
+  const tickers = $('tickers').value.trim();
+  $('clearTk').style.display = tickers ? '' : 'none';
   const qs = new URLSearchParams({
     conviction_only: $('convOnly').checked ? '1' : '0',
     side: $('side').value, bucket: $('bucket').value, min_conviction: $('minConv').value,
   });
-  $('rows').innerHTML = '<tr><td class="empty" colspan="12">loading…</td></tr>';
+  if (tickers) qs.set('tickers', tickers);
+  $('rows').innerHTML = '<tr><td class="empty" colspan="13">loading…</td></tr>';
+  $('summary').innerHTML = '';
   try {
     const r = await fetch('/api/flow/feed?' + qs);
     const d = await r.json();
-    renderRows(d.signals || []);
+    _signals = d.signals || [];
+    _tickers = d.tickers || [];
+    _counts = d.counts || {};
+    render();
     renderStatus(d.status, d.date, d.count);
   } catch {
-    $('rows').innerHTML = '<tr><td class="empty" colspan="12">Failed to load the feed.</td></tr>';
+    _signals = []; _counts = {};
+    $('summary').innerHTML = '';
+    $('rows').innerHTML = '<tr><td class="empty" colspan="13">Failed to load the feed.</td></tr>';
   }
 }
+
+document.querySelectorAll('#head th').forEach(th => { th.onclick = () => setSort(th.dataset.key); });
+
+function setTickers(val) { $('tickers').value = val; load(); }
+
+let _tkTimer = null;
+$('tickers').addEventListener('input', () => {
+  clearTimeout(_tkTimer); _tkTimer = setTimeout(load, 350);
+});
+$('tickers').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { clearTimeout(_tkTimer); load(); }
+});
+$('clearTk').onclick = () => setTickers('');
 
 $('refresh').onclick = load;
 ['convOnly','side','bucket','minConv'].forEach(id => $(id).addEventListener('change', load));
 $('sync').onclick = async () => {
   $('sync').textContent = 'scanning…'; $('sync').disabled = true;
-  try { await fetch('/api/flow/sync', {method:'POST'}); } catch {}
+  $('scanMsg').textContent = '';
+  let msg = '';
+  try {
+    const r = await fetch('/api/flow/sync', {method:'POST'});
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.ok) {
+      const open = d.status && d.status.market_open;
+      msg = `scanned · ${d.flagged} flagged this pass` + (open ? '' : ' · market closed (final snapshot)');
+    } else {
+      msg = 'scan failed: ' + (d.error || ('HTTP ' + r.status));
+    }
+  } catch {
+    msg = 'scan failed: network error';
+  }
   $('sync').textContent = 'Scan now'; $('sync').disabled = false;
+  $('scanMsg').textContent = msg;
   load();
 };
 
