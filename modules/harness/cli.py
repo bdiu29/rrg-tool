@@ -7,6 +7,8 @@ Harness CLI — print today's market brief from the terminal.
     /usr/bin/python3 -m modules.harness.cli --backtest    # the referee: A/B harness vs RRG vs beta
     /usr/bin/python3 -m modules.harness.cli --import-watchlist PATH  # load a TradingView export
     /usr/bin/python3 -m modules.harness.cli --picks       # ranked impulse×hold suggestions
+    /usr/bin/python3 -m modules.harness.cli --paper-step  # advance the paper books one day
+    /usr/bin/python3 -m modules.harness.cli --paper       # paper-book state + the gate
 
 Same code path as GET /api/harness. No-LLM by default so it's free and fast.
 """
@@ -67,6 +69,44 @@ def main(argv=None):
         print("  " + "-" * 72)
         print(f"  {rep['tradeable']} tradeable (impulse≥{int(picks.MIN_IMPULSE)} "
               f"& hold≥{int(picks.MIN_HOLD)}).  {rep['note']}")
+        print()
+        return
+
+    if "--paper-step" in argv:
+        from modules.harness import paper
+        res = paper.step()
+        if res.get("skipped"):
+            print(f"  paper: {res['date']} already stepped — {res['reason']}")
+        else:
+            print(f"  paper step {res['date']} · stance {res.get('stance')} · "
+                  f"posture {res.get('posture')}")
+            for b in res["books"]:
+                print(f"    {b['book']:<10} equity ${b['equity']:,.0f}  "
+                      f"longs {b['n_long']}  fills {b['fills']}  cost ${b['cost']:.2f}")
+        return
+
+    if "--paper" in argv:
+        from modules.harness import paper
+        st = paper.state()
+        if as_json:
+            print(json.dumps(st, indent=2, default=str)); return
+        print()
+        print(f"  PAPER BOOKS — start ${st['starting_capital']:,.0f}")
+        for name, b in st["books"].items():
+            if not b.get("days"):
+                print(f"  {name}: not started — run --paper-step"); continue
+            print(f"  {name:<10} {b['days']}d  equity ${b['equity']:,.0f}  "
+                  f"ret {b['total_return']:+.2f}%  vs SPY {b.get('vs_spy')}  "
+                  f"maxDD {b['max_drawdown']}%  cost ${b['cost_paid']:.0f}  "
+                  f"turnover {b['avg_turnover']}%")
+            if b["positions"]:
+                print("       " + ", ".join(f"{p['symbol']}×{p['shares']:g}"
+                                            for p in b["positions"]))
+        g = st["gate"]
+        print("  " + "-" * 58)
+        print(f"  GATE ({g['days']}d): hedged ret {g['hedged_total_return']}%  "
+              f"vs SPY {g['hedged_vs_spy']}  cost ${g['cost_paid']}")
+        print(f"  {g['note']}")
         print()
         return
 

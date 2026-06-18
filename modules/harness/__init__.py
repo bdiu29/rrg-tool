@@ -194,6 +194,26 @@ def _handle_picks(req):
         return Response.error(f"picks failed: {e}", 500)
 
 
+def _handle_paper(req):
+    """GET → both paper books' state + the gate. POST /step → advance one trading day
+    (idempotent). POST /reset → wipe the books (requires {confirm:true})."""
+    from modules.harness import paper
+    path = req.path.rstrip("/")
+    try:
+        if path.endswith("/step"):
+            return Response.json(paper.step())
+        if path.endswith("/reset"):
+            body = req.json_body() if req.method == "POST" else {}
+            if not (body or {}).get("confirm"):
+                return Response.error("reset requires {\"confirm\": true}", 400)
+            from modules.harness import store
+            store.reset_paper()
+            return Response.json({"reset": True})
+        return Response.json(paper.state())
+    except Exception as e:
+        return Response.error(f"paper failed: {e}", 500)
+
+
 def _handle_backtest(req):
     """The referee (Phase 2) — A/B the harness confluence decision vs raw RRG vs beta
     over history. Synchronous (sector daily ~4s); the LLM plays no part."""
@@ -228,3 +248,6 @@ def register_routes(router):
     router.get("/api/harness/watchlist",  _handle_watchlist)
     router.post("/api/harness/watchlist", _handle_watchlist)
     router.get("/api/harness/picks",      _handle_picks)
+    router.get("/api/harness/paper",        _handle_paper)
+    router.post("/api/harness/paper/step",  _handle_paper)
+    router.post("/api/harness/paper/reset", _handle_paper)
