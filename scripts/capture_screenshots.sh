@@ -44,6 +44,12 @@ PAGES=(
   "screener|/screener.html|"
   "rankings|/rankings.html|"
   "themes|/themes.html|"
+  "flow|/flow.html|"
+  "canslim|/canslim.html|"
+  "news|/news.html|"
+  "macro|/macro.html|"
+  "harness|/harness.html|"
+  "research|/research.html|"
 )
 
 if ! curl -s -o /dev/null --max-time 3 "${BASE}/"; then
